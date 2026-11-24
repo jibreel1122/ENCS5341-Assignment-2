@@ -387,11 +387,15 @@ def read_zip(sub, locator, stream):
             inspect_member(sub, target, data, datetime(*entry.date_time).isoformat())
 
 
-def read_rar(sub, locator, path):
+def open_rar(path):
     # bsdtar imports the RAR into a TAR byte stream. No archive paths are extracted.
     command = ["tar.exe" if os.name == "nt" else "bsdtar", "-cf", "-", "@" + str(path)]
     result = subprocess.run(command, capture_output=True, check=True)
-    with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:") as archive:
+    return tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:")
+
+
+def read_rar(sub, locator, path):
+    with open_rar(path) as archive:
         members = [m for m in archive if not m.isdir()]
         names = Counter(m.name for m in members)
         for entry in sorted(members, key=lambda m: m.name):
@@ -795,7 +799,7 @@ def record_links(sub, table):
     photo_col = labels.index("photo") if "photo" in labels else None
     id_col = labels.index("item_id") if "item_id" in labels else None
     sequence = sequence_links(table, sub.images, id_col)
-    uses, issues = defaultdict(set), defaultdict(list)
+    uses, issues, matches = defaultdict(set), defaultdict(list), defaultdict(list)
     for row_number, row in table.rows:
         item_id = display(row[id_col]).strip() if id_col is not None else ""
         if item_id and item_id.casefold() not in PLACEHOLDERS:
@@ -823,6 +827,7 @@ def record_links(sub, table):
                 if len(targets) == 1:
                     target = targets[0]
                     uses[target].add(row_number)
+                    matches[row_number].append((target, method))
                     table.links["linked_refs"] += 1
                     table.links["readable_linked_refs"] += int(sub.images[target][2])
                     table.photo_formats[method] += 1
@@ -843,15 +848,19 @@ def record_links(sub, table):
                             table.folder_links[row_number] = group
                             for target in group:
                                 uses[target].add(row_number)
+                                matches[row_number].append((target, "item_id_folder"))
         # Numeric inference preserves the missing explicit reference as an issue.
         if unresolved and item_id and row_number not in table.folder_links:
             candidates = stems.get(image_key(item_id), []) or compact.get(compact_stem(item_id), [])
+            method = "item_id_stem"
             if not candidates and row_number in sequence:
                 candidates = [sequence[row_number]]
+                method = "item_id_sequence"
             if len(candidates) == 1:
                 target = candidates[0]
                 uses[target].add(row_number)
                 table.inferred_links[row_number] = target
+                matches[row_number].append((target, method))
     table.linked_images = set(uses)
     table.links["inferred_links"] = len(table.inferred_links) + sum(map(len, table.folder_links.values()))
     table.links["inferred_rows"] = len(table.inferred_links) + len(table.folder_links)
@@ -890,6 +899,11 @@ def record_links(sub, table):
     if repeated:
         sub.issue("duplicate_item_ids_within_table", table.reference, f"Repeated ID row sets: {repeated}.",
                   action="Investigate in Phase 2")
+    flags = defaultdict(list)
+    for reason, rows in sorted(issues.items()):
+        for row in sorted(set(rows)):
+            flags[row].append(reason)
+    return matches, flags
 
 
 def candidate_basis(sub):
