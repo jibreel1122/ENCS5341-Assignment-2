@@ -31,7 +31,7 @@ python Scripts/phase0_audit.py --root LocalData --export class-submissions.zip
 python Scripts/phase1_integration.py --root LocalData
 ```
 
-Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run both scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. Identical reruns leave the baseline in place.
+Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run both scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place.
 
 The raw CSV and local audit files contain student IDs and original paths. Authorized collaborators can regenerate them locally. Read source value columns as strings to preserve identifiers, blanks, and literal placeholders. `source_table` and the locators in `image_links` are JSON arrays. The first element is relative to the source root and subsequent elements locate members inside archives.
 

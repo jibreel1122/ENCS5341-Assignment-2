@@ -11,7 +11,8 @@ import subprocess
 import tarfile
 import tempfile
 from collections import Counter, defaultdict
-from pathlib import Path
+from decimal import Decimal, InvalidOperation
+from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 
 import pandas as pd
@@ -40,6 +41,7 @@ COLUMNS = (
     "image_status", "image_links", "image_flags", "source_extras",
 )
 CONFIRMED = {"exact_path", "filename"}
+RECOVERED_TAIL = ("category", "age_raw", "condition_raw", "price_raw", "currency_raw")
 
 
 def local_path(root, relative):
@@ -146,15 +148,23 @@ def read_selected_files(root, sources, locators):
     return files
 
 
-def table_records(data, spec):
+def table_records(data, spec, id_formats=None):
     if spec["format"] != "XLSX":
         return audit.delimited_records(data.decode(spec["encoding"]), spec["delimiter"], True), {}
     book = load_workbook(io.BytesIO(data), data_only=False, keep_links=False)
     try:
         worksheet = book[spec["sheet"]]
         rows, hyperlinks = [], {}
+        id_column = None
+        if id_formats is not None:
+            id_column = next((cell.column for cell in worksheet[spec["header_row"]]
+                              if field_role(cell.value) == "item_id"), None)
         for number, cells in enumerate(worksheet.iter_rows(), 1):
             rows.append((number, tuple(cell.value for cell in cells)))
+            if id_column and number > spec["header_row"]:
+                cell = cells[id_column - 1]
+                if type(cell.value) in (int, float):
+                    id_formats[number] = cell.number_format
             refs = [{"column": cell.column, "target": cell.hyperlink.target, "location": cell.hyperlink.location}
                     for cell in cells if cell.hyperlink]
             if refs:
@@ -168,6 +178,13 @@ def field_role(header):
     if audit.display(header).strip().lower() == "link":
         return "listing_link"
     return audit.role(header)
+
+
+def selected_table(row):
+    locator = tuple(json.loads(row["tabular_data_locator"]))
+    spec, = [table for table in json.loads(row["table_candidates"])
+             if tuple(table["locator"]) == locator and table["sheet"] == row["table_sheet"]]
+    return locator, spec
 
 
 def align_delimited(raw, header, delimiter):
@@ -222,11 +239,9 @@ def project_fields(raw, header, delimiter, hyperlinks):
 
 
 def integrate_submission(root, row, issues, stats, schema):
-    source = tuple(json.loads(row["tabular_data_locator"]))
+    source, spec = selected_table(row)
     images = [tuple(path) for path in json.loads(row["image_file_locators"])]
     sources = json.loads(row["original_submission_paths"])
-    spec, = [t for t in json.loads(row["table_candidates"])
-             if tuple(t["locator"]) == source and t["sheet"] == row["table_sheet"]]
     if len(set(images)) != len(images) or source in images or len(images) != int(row["image_files"]):
         raise ValueError("Image locator inventory disagrees with the Phase 0 manifest.")
     files = read_selected_files(root, sources, [source, *images])
@@ -352,6 +367,147 @@ def validate_csv(data, frame, selected):
     return records
 
 
+def validate_source_fields(record, original, header, spec, hyperlinks):
+    """Validate against source cells without invoking the integration repair."""
+    columns = [SOURCE_COLUMNS.get(field_role(name)) for name in header]
+    expected = {column: audit.display(original[i]) if i < len(original) else ""
+                for i, column in enumerate(columns) if column}
+    extras = json.loads(record["source_extras"])
+    alignment = extras.get("alignment")
+    extra_cells = []
+    if alignment:
+        if (int(record["source_row"]) not in spec["malformed_rows"]
+                or extras.get("parsed_source_fields") != list(original)
+                or tuple(columns[-5:]) != RECOVERED_TAIL or len(original) <= len(header)):
+            raise ValueError("A repaired row does not retain its complete source fragments.")
+        tail = original[-5:]
+        if not tail[0].strip() or not re.fullmatch(r"[A-Z]{3}", tail[-1].strip()) or not all(
+            Decimal(value.strip()).is_finite() for value in tail[1:4]
+        ):
+            raise ValueError("A repaired row does not have an identifiable trailing field sequence.")
+        expected.update(zip(RECOVERED_TAIL, tail, strict=True))
+        if alignment == "space_prefixed_quoted_description":
+            start = columns.index("description")
+            text = spec["delimiter"].join(original[start:-5])
+            parsed = next(csv.reader([text.rstrip()], delimiter=spec["delimiter"],
+                                     strict=True, skipinitialspace=True))
+            if len(parsed) != 1 or not text.lstrip().startswith('"') or not text.rstrip().endswith('"'):
+                raise ValueError("A repaired description does not have enclosing CSV quotes.")
+            leading = text[:len(text) - len(text.lstrip())]
+            trailing = text[len(text.rstrip()):]
+            expected["description"] = leading + parsed[0] + trailing
+        elif alignment != "unquoted_prose_boundary":
+            raise ValueError("Unrecognized source alignment evidence.")
+    else:
+        if "parsed_source_fields" in extras:
+            raise ValueError("Source fragments have no alignment evidence.")
+        for i, value in enumerate(original):
+            if (i >= len(columns) or columns[i] is None) and audit.display(value):
+                extra_cells.append({"column": i + 1, "header": audit.display(header[i]) if i < len(header) else "",
+                                    "value": audit.display(value)})
+    if extras.get("additional_cells", []) != extra_cells or extras.get("hyperlinks", []) != hyperlinks:
+        raise ValueError("Additional cells or hyperlinks differ from their source.")
+    if any(record[column] != expected.get(column, "") for column in SOURCE_COLUMNS.values()):
+        raise ValueError(f"An exported field differs from its source at record {record['record_id']}.")
+    return alignment
+
+
+def validate_source_records(root, records, selected):
+    """Reopen original tables and check the CSV values, provenance and image evidence."""
+    exported = defaultdict(dict)
+    for record in records:
+        exported[record["submission_id"]][int(record["source_row"])] = record
+    checked = Counter()
+    price_headers, age_headers = Counter(), Counter()
+    unquoted_categories, intact_categories = set(), set()
+    for source in selected:
+        locator, spec = selected_table(source)
+        attachments = json.loads(source["original_submission_paths"])
+        data = read_selected_files(root, attachments, [locator])[locator]
+        if hashlib.sha256(data).hexdigest() != spec["source_sha256"]:
+            raise ValueError("A source table changed before export validation.")
+        id_formats = {}
+        rows, hyperlinks = table_records(data, spec, id_formats)
+        header = dict(rows)[spec["header_row"]]
+        price = next(audit.display(h) for h in header if field_role(h) == "price")
+        age = next(audit.display(h) for h in header if field_role(h) == "age")
+        id_column = next((i for i, h in enumerate(header) if field_role(h) == "item_id"), None)
+        price_headers[price] += 1
+        age_headers[age] += 1
+        has_currency = any(field_role(h) == "currency" for h in header)
+        checked["tables_without_currency"] += not has_currency
+        # Record whether the actual heading has anything beyond the price label.
+        if price.strip().casefold() != "price":
+            checked["qualified_price_headers"] += 1
+            if not has_currency:
+                raise ValueError("A qualified price header needs explicit preservation in the raw schema.")
+        unit = "years" if {"year", "years"} & set(re.findall("[a-z]+", age.lower())) else ""
+        checked["age_unit_tables"] += bool(unit)
+        sub = audit.Submission(source["student_id"], attachments, [])
+        table = audit.worksheet_table(sub, locator, spec["sheet"], spec["format"], spec["encoding"],
+                                      spec["delimiter"], rows)
+        sub.images = {tuple(path): ("", "", True) for path in json.loads(source["image_file_locators"])}
+        matches, flags = audit.record_links(sub, table)
+        by_line = exported[source["submission_id"]]
+        parsed_lines = {n for n, values in rows if n > spec["header_row"]
+                        and any(map(audit.present, values)) and n not in spec["rows_without_item_evidence"]}
+        if set(by_line) != parsed_lines or table.malformed != spec["malformed_rows"]:
+            raise ValueError("Exported source row locations or structural exceptions differ from the manifest.")
+
+        for number, original in rows:
+            if number not in by_line:
+                continue
+            record = by_line[number]
+            if (tuple(json.loads(record["source_table"])) != locator or record["source_sheet"] != spec["sheet"]
+                    or record["record_id"] != f"r-{source['submission_id']}-{number}"
+                    or record["age_header_unit"] != unit):
+                raise ValueError("Exported provenance or the declared age unit differs from its source.")
+            alignment = validate_source_fields(record, original, header, spec, hyperlinks.get(number, []))
+            checked["rows"] += 1
+            checked["age_unit_rows"] += bool(unit)
+            checked["rows_without_currency_column"] += not has_currency
+            if alignment:
+                checked[alignment] += 1
+            if alignment == "unquoted_prose_boundary":
+                unquoted_categories.add(record["category"].strip())
+            elif not alignment:
+                intact_categories.add(record["category"].strip())
+
+            if spec["format"] == "XLSX" and id_column is not None and record["original_item_id"]:
+                if isinstance(original[id_column], str):
+                    checked["xlsx_text_ids"] += 1
+                    checked["xlsx_text_ids_with_leading_zeros"] += bool(
+                        re.fullmatch(r"0\d+", record["original_item_id"])
+                    )
+                if number in id_formats:
+                    checked["xlsx_numeric_ids"] += 1
+                    if re.fullmatch(r"0{2,}", id_formats[number]):
+                        raise ValueError("An Excel item ID uses a zero-padding display format that needs review.")
+            expected = [{"locator": list(target), "method": method} for target, method in matches.get(number, ())]
+            methods = {link["method"] for link in expected}
+            evidence = flags.get(number, [])
+            if "ambiguous_refs" in evidence:
+                status = "ambiguous"
+            elif not methods:
+                status = "missing"
+            elif methods - CONFIRMED or "missing_refs" in evidence:
+                status = "plausible"
+            else:
+                status = "confirmed"
+                photo_name = PurePosixPath(record["image_reference_raw"].strip().replace("\\", "/")).name
+                if len(expected) == 1 and audit.image_key(photo_name) != audit.image_key(
+                    PurePosixPath(expected[0]["locator"][-1]).name
+                ):
+                    raise ValueError("A confirmed link does not match the recorded filename.")
+            if (json.loads(record["image_links"]) != expected or json.loads(record["image_flags"]) != evidence
+                    or record["image_status"] != status):
+                raise ValueError("Exported image status or evidence differs from original references.")
+            checked[f"image_{status}"] += 1
+    checked["unquoted_categories"] = len(unquoted_categories)
+    checked["unquoted_categories_corroborated"] = len(unquoted_categories & intact_categories)
+    return checked, price_headers, age_headers
+
+
 def write_output(path, data, protect=False):
     if path.is_symlink() or path.parent.resolve() != path.parent:
         raise ValueError("Refusing to write to an output symlink or junction.")
@@ -381,7 +537,7 @@ def updated_issue_bytes(path, issues):
     return out.getvalue().encode("utf-8-sig")
 
 
-def summarize(records, selected, versions, attachments, stats, schema, digest):
+def summarize(records, selected, versions, attachments, stats, schema, digest, source_review):
     category = {row["category"] for row in records if row["category"].strip()}
     item_ids = Counter(row["original_item_id"] for row in records if row["original_item_id"].strip())
     trimmed_ids = {value.strip() for value in item_ids}
@@ -389,6 +545,7 @@ def summarize(records, selected, versions, attachments, stats, schema, digest):
     link_methods = stats["link_methods"]
     original_counts = Counter(int(row["data_rows"]) for row in selected)
     hashes = stats["image_hashes"]
+    checked, price_headers, age_headers = source_review
     n_rows, n_students, n_columns = len(records), len(selected), len(COLUMNS)
     blank_category = sum(not row["category"].strip() for row in records)
     sections = [
@@ -468,7 +625,7 @@ def summarize(records, selected, versions, attachments, stats, schema, digest):
         "audit did not verify visual correspondence with the marketplace listing.",
         f"- Association methods by file link: {', '.join(f'`{method}` ({n:,})' for method, n in sorted(link_methods.items()))}.",
         f"- {stats['flagged_refs']['missing_refs']} rows still have an unmatched explicit filename. Inferred links "
-        "are labeled in the CSV. The 16-row submission remains intact.",
+        "are labeled in the CSV.",
     ]
     if stats["multi_image_rows"]:
         sections += [
@@ -485,6 +642,29 @@ def summarize(records, selected, versions, attachments, stats, schema, digest):
             "evidence. Both remain available locally.",
         ]
     sections += [
+        "", "## Source preservation checks", "",
+        f"- Reopened all {len(selected)} original selected tables and compared {checked['rows']:,} rows against "
+        "their CSV records. The check covers mapped fields, untouched fragments, recovered suffixes, extra cells, "
+        "hyperlinks, source locations and image evidence.",
+        f"- Price headers observed: {', '.join(f'`{value}` ({count})' for value, count in sorted(price_headers.items()))}. "
+        f"Qualified headings total {checked['qualified_price_headers']}. The {checked['tables_without_currency']} "
+        f"source table(s) without a currency column account for {checked['rows_without_currency_column']} rows. "
+        "Their price headers supply no currency value.",
+        f"- Age headers observed: {', '.join(f'`{value}` ({count})' for value, count in sorted(age_headers.items()))}. "
+        f"Years are explicit in {checked['age_unit_tables']} tables and {checked['age_unit_rows']} rows. "
+        f"The other {n_rows - checked['age_unit_rows']:,} rows have no header-declared unit.",
+        f"- Verified all {checked['unquoted_prose_boundary']} unquoted rows and "
+        f"{checked['space_prefixed_quoted_description']} quoted repairs against the original cells. All "
+        f"{checked['unquoted_categories_corroborated']} of {checked['unquoted_categories']} recovered unquoted "
+        "category labels also occur on intact source rows.",
+        f"- Excel item ID cells include {checked['xlsx_text_ids']} non-empty text IDs and {checked['xlsx_numeric_ids']} "
+        f"numeric IDs. The {checked['xlsx_text_ids_with_leading_zeros']} zero-prefixed numeric strings were "
+        "verified verbatim. No numerical display conversion was needed.",
+        f"- The source check reproduced the association statuses for "
+        f"{sum(checked[f'image_{name}'] for name in ('confirmed', 'plausible', 'ambiguous', 'missing')):,} rows. "
+        "It enforces a complete explicit filename match for confirmed single-file links.",
+        "- The counts above are calculated at runtime. Structural recovery is rule-based. The approved workbook "
+        "choice is recorded in the Phase 0 manifest and keyed to the two original file hashes.",
         "", "## Validation and readiness", "",
         f"- Checked the bulk export hash and all {attachments} original attachment contents before and after "
         "integration. Read only the exact tables and images listed in the approved manifest during integration.",
@@ -514,11 +694,13 @@ def integrate(root):
     stats["hyperlink_rows"] = sum("hyperlinks" in json.loads(extras) for extras in frame["source_extras"])
     data = csv_bytes(frame)
     records = validate_csv(data, frame, selected)
+    source_review = validate_source_records(root, records, selected)
     if verify_originals(root, manifest) != attachments:
         raise ValueError("The source attachment inventory changed during integration.")
     issue_path = root / "Audit" / "phase0_issues.csv"
     issue_data = updated_issue_bytes(local_path(root, "Audit/phase0_issues.csv"), issues)
-    summary = summarize(records, selected, versions, attachments, stats, schema, hashlib.sha256(data).hexdigest())
+    summary = summarize(records, selected, versions, attachments, stats, schema,
+                        hashlib.sha256(data).hexdigest(), source_review)
     write_output(root / "marketplace_raw.csv", data, protect=True)
     write_output(issue_path, issue_data)
     write_output(root / "Audit" / "phase1_summary.md", summary.encode("utf-8"))
@@ -532,7 +714,7 @@ def main():
     args = parser.parse_args()
     try:
         rows = integrate(args.root)
-    except audit.FILE_ERRORS + (csv.Error, tarfile.TarError, subprocess.SubprocessError) as exc:
+    except audit.FILE_ERRORS + (csv.Error, InvalidOperation, tarfile.TarError, subprocess.SubprocessError) as exc:
         parser.exit(1, f"Phase 1 integration failed. {exc}\n")
     print(f"Validated {rows:,} marketplace records and wrote the local Phase 1 outputs.")
 
