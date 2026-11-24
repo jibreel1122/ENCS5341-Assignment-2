@@ -4,9 +4,11 @@ A reproducible Python workflow for auditing, integrating, cleaning, and explorin
 
 ## Progress
 
-Phase 1 is complete. The raw baseline contains 1,801 observations from 120 selected submissions, 21 columns, and 132 distinct nonblank category strings. Category spelling and spacing remain as recorded.
+Phase 2 is complete. The raw baseline contains 1,801 observations from 120 selected submissions, 21 columns, and 132 distinct nonblank category strings. Category spelling and spacing remain as recorded.
 
-The integration used the approved Excel source for the one conflicting CSV/Excel pair. It verified 1,803 standalone image locators, including 1,801 distinct image hashes. The CSV records 1,507 image associations confirmed by path or filename, 293 plausible associations, and one unmatched record. One image remains unlinked. Twelve rows preserve an uncertain title/description boundary in their original CSV fragments. Phase 2 awaits approval.
+The integration used the approved Excel source for the one conflicting CSV/Excel pair. It verified 1,803 standalone image locators, including 1,801 distinct image hashes. The CSV records 1,507 image associations confirmed by path or filename, 293 plausible associations, and one unmatched record. One image remains unlinked. Twelve rows preserve an uncertain title/description boundary in their original CSV fragments.
+
+The quality assessment compares prices within currency and uses Assignment 1's age and condition rules. Its proposed category map, duplicate candidates, IQR results, diagnostic plot, and record-level findings are generated locally. Phase 3 awaits approval.
 
 ## Project layout
 
@@ -14,13 +16,14 @@ The integration used the approved Excel source for the one conflicting CSV/Excel
 |---|---|
 | `Scripts/phase0_audit.py` | Verify the bulk export, select submissions, and audit tables and images |
 | `Scripts/phase1_integration.py` | Integrate the selected tables and preserve original values and source references |
+| `Scripts/phase2_quality_assessment.py` | Check the baseline hash and reproduce data-quality findings and diagnostics |
 | `requirements.txt` | Python dependencies |
 | `LocalData/` | Private local inputs for collaborators |
 | `LocalData/Audit/` | Local manifest, issue inventory, and audit summaries |
 | `LocalData/marketplace_raw.csv` | Sensitive local baseline produced by Phase 1 |
 | `Notebooks/` and `Docs/` | Reviewed notebooks and documentation as the assignment progresses |
 
-## Reproduce the audit and raw baseline
+## Reproduce the audit, raw baseline, and quality assessment
 
 Use Python 3.11 or later and a RAR-capable `tar.exe` on Windows or `bsdtar` on other platforms. Pillow needs AVIF support. From the repository root, install the dependencies with `python -m pip install -r requirements.txt`.
 
@@ -29,9 +32,10 @@ Obtain the course-authorized bulk ZIP through the approved course channel. Place
 ```sh
 python Scripts/phase0_audit.py --root LocalData --export class-submissions.zip
 python Scripts/phase1_integration.py --root LocalData
+python Scripts/phase2_quality_assessment.py --root LocalData
 ```
 
-Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run both scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place.
+Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run the scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place. Phase 2 checks the baseline digest before and after assessment and writes only `Audit/phase2_*` outputs.
 
 The raw CSV and local audit files contain student IDs and original paths. Authorized collaborators can regenerate them locally. Read source value columns as strings to preserve identifiers, blanks, and literal placeholders. `source_table` and the locators in `image_links` are JSON arrays. The first element is relative to the source root and subsequent elements locate members inside archives.
 
