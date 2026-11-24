@@ -8,7 +8,7 @@ Phase 2 is complete. The raw baseline contains 1,801 observations from 120 selec
 
 The integration used the approved Excel source for the one conflicting CSV/Excel pair. It verified 1,803 standalone image locators, including 1,801 distinct image hashes. The CSV records 1,507 image associations confirmed by path or filename, 293 plausible associations, and one unmatched record. One image remains unlinked. Twelve rows preserve an uncertain title/description boundary in their original CSV fragments.
 
-The quality assessment compares prices within currency and uses Assignment 1's age and condition rules. Its proposed category map, duplicate candidates, IQR results, diagnostic plot, and record-level findings are generated locally. The pre-cleaning checkpoint independently verifies source rows and IQR results, prepares a fixed ILS rate reference, and tracks visual review coverage. Phase 3 awaits approval.
+The quality assessment compares prices within currency and uses Assignment 1's age and condition rules. The pre-cleaning checkpoint independently verifies source rows and IQR results and prepares a fixed ILS rate reference. It combines the local visual and contextual judgments with those checks to propose category mappings, image links and duplicate groups. Phase 3 awaits approval.
 
 ## Project layout
 
@@ -43,4 +43,6 @@ The raw CSV and local audit files contain student IDs and original paths. Author
 
 Share code, aggregate findings, and reviewed notebooks through GitHub. Review notebook outputs and any final deliverables for sensitive data before committing them. Keep course PDFs and student inputs in the approved course channel.
 
-Add `--contact-sheets` to the checkpoint command to produce private previews in the source root's `Working/PreCleaning/ContactSheets/`. The checkpoint merges saved human judgments from `Working/PreCleaning/visual_judgments.csv` and `duplicate_judgments.csv` when available. Without those local judgments, the generated inventory explicitly marks images and pairs as unreviewed. Obtain approved review files through the same private course channel as the sources. Review spreadsheets contain source titles, text and paths and stay outside Git.
+Add `--contact-sheets` to the checkpoint command to produce private previews in the source root's `Working/PreCleaning/ContactSheets/`. Place the authorized `visual_judgments.csv`, `duplicate_judgments.csv`, `outlier_judgments.csv` and `category_judgments.csv` files in `Working/PreCleaning/` under the same source root. Visual judgments are joined by original image locator and SHA-256. If local judgments are unavailable, the checkpoint reports incomplete manual review and still runs the automated checks. Review files and generated inventories contain source text, paths or private record keys. Share them through the approved course channel.
+
+The checkpoint generates the report and decision table under `Audit/` alongside local image, duplicate, category and outlier review inventories and the fixed exchange-rate table. The documented 25 November 2026 retrieval uses published quotes dated 24 November 2026 plus the ILS identity. Reproduction uses the frozen quote operands and requires no exchange-rate refresh.

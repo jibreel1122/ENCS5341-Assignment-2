@@ -74,6 +74,36 @@ def rates(currencies):
     return rows
 
 
+def rate_check(reference):
+    """Reconcile the frozen conversion table with the published quote units."""
+    quotes = {
+        BOI: {f"ILS/{code}": value for code, value in DIRECT.items()},
+        ECB: {"ILS/EUR": "3.6618", "INR/EUR": "101.8670", "SGD/EUR": "1.4141"},
+        UAE: {"AED/USD": "3.6725", "AED/ILS": "1.100111", "AED/IQD": "0.002422", "AED/SAR": "0.978655"},
+        LIBYA: {"LYD/USD": "6.4848"},
+        TAIWAN: {"TWD/USD": "32.939"},
+    }
+    for row in reference:
+        code = row["currency_code"]
+        require(row["retrieval_date"] == SNAPSHOT_DATE and row["direction"] == f"1 {code} to ILS",
+                "Wrong exchange rate date or direction.")
+        if code == "ILS":
+            require(Decimal(row["ils_per_unit"]) == 1 and not row["source_url"], "Wrong ILS identity.")
+            continue
+        require(row["rate_date"] == QUOTE_DATE, "Wrong published FX quote date.")
+        if row["second_source_url"]:
+            units = re.findall(r"\b[A-Z]{3}/[A-Z]{3}\b", row["calculation"])
+            a, b = ((Decimal(quotes[row[key]][unit])) for key, unit in
+                    zip(("source_url", "second_source_url"), units, strict=True))
+        else:
+            a, b = Decimal(quotes[row["source_url"]][f"ILS/{code}"]), Decimal(1)
+        require(a == Decimal(row["numerator"]) and b == Decimal(row["denominator"])
+                and a / b == Decimal(row["ils_per_unit"]), f"Frozen FX quote operands disagree for {code}.")
+    boi_eur = Decimal(quotes[BOI]["ILS/EUR"])
+    ecb_eur = Decimal(quotes[ECB]["ILS/EUR"])
+    return boi_eur - ecb_eur, (boi_eur - ecb_eur) * 100 / boi_eur
+
+
 def require(condition, message):
     if not condition:
         raise ValueError(message)
@@ -274,16 +304,17 @@ def sheet(path, cards, columns, item_size):
 
 
 def visual_packets(root, records, selected, candidate_pairs, gallery):
-    """Generate an inventory independent of manual judgments, and resume by index."""
+    """Join visual judgments to the exact source locator and byte hash."""
     links = defaultdict(list)
     for row in records:
         for entry in json.loads(row["image_links"]):
             links[tuple(entry["locator"])].append((row, entry["method"]))
     private = root / "Working" / "PreCleaning"
     private.mkdir(parents=True, exist_ok=True)
-    annotations = load_judgments(private / "visual_judgments.csv", ("image_id",))
+    annotations = load_judgments(private / "visual_judgments.csv", ("locator", "sha256"))
     pair_notes = load_judgments(private / "duplicate_judgments.csv", ("first", "second"))
     photos, objects, ids_by_record = [], {}, defaultdict(list)
+    notes_by_display_id = {}
     for source in selected:
         locators = [tuple(loc) for loc in json.loads(source["image_file_locators"])]
         payloads = integration.read_selected_files(root, json.loads(source["original_submission_paths"]), locators)
@@ -294,18 +325,21 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
             row = linked[0][0] if len(linked) == 1 else None
             if row:
                 ids_by_record[row["record_id"]].append(image_id)
-            note = annotations.get((image_id,), {})
+            locator_json = audit.json_cell(list(locator))
+            digest = hashlib.sha256(data).hexdigest()
+            note = annotations.get((locator_json, digest), {})
             if note:
                 require(note["verdict"] in {"visually consistent", "visually inconsistent", "uncertain",
                                            "insufficient visual information", "unlinked image"}
                         and note["observed_type"] and note["evidence"], "An image judgment lacks visual evidence.")
-            photos.append(dict(image_id=image_id, locator=audit.json_cell(list(locator)),
+                notes_by_display_id[image_id] = note
+            photos.append(dict(image_id=image_id, locator=locator_json,
                                record_ids=audit.json_cell([r["record_id"] for r, _ in linked]),
                                title=row["title"] if row else "", category=row["category"] if row else "",
                                description=row["description"] if row else "",
                                structural_method="; ".join(method for _, method in linked),
                                structural_status=row["image_status"] if row else "unlinked",
-                               sha256=hashlib.sha256(data).hexdigest(),
+                               sha256=digest,
                                review_status="reviewed" if note else "not yet reviewed",
                                observed_type=note.get("observed_type", ""),
                                verdict=note.get("verdict", ""), evidence=note.get("evidence", ""),
@@ -327,7 +361,7 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
 
                 signature = (dhash(grey), dhash(center), tuple(image.resize((1, 1)).getpixel((0, 0))))
             objects[image_id] = (thumbnail.getvalue(), signature)
-    require(set(annotations) <= {(r["image_id"],) for r in photos}, "Unknown image ID in visual judgments.")
+    require(len(notes_by_display_id) == len(annotations), "An image judgment no longer matches a selected locator and hash.")
     lookup = {r["image_id"]: r for r in photos}
     pairs = defaultdict(set)
     for a, b in combinations(photos, 2):
@@ -372,6 +406,8 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
         first_keys, second_keys = ({quality.recorded_listing(row)[0] for row in group
                                     if quality.recorded_listing(row)[0]} for group in (first_rows, second_rows))
         result.append(dict(pair=f"P{number:03d}", first=first, second=second,
+                           first_locator=lookup[first]["locator"], first_sha256=lookup[first]["sha256"],
+                           second_locator=lookup[second]["locator"], second_sha256=lookup[second]["sha256"],
                            record_ids_first=lookup[first]["record_ids"], record_ids_second=lookup[second]["record_ids"],
                            item_context=audit.json_cell(comparisons),
                            listing_evidence=("same saved listing address" if first_keys & second_keys else
@@ -383,11 +419,20 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
                            evidence=note.get("evidence", ""),
                            proposed_action=note.get("action", "Retain pending sufficient identity evidence")))
     for photo in photos:
-        note = annotations.get((photo["image_id"],), {})
+        note = notes_by_display_id.get(photo["image_id"], {})
         photo["suggested_category"] = note.get("suggested_category", "")
         photo["proposed_replacement_image"] = note.get("proposed_record_image", "")
         if target := photo["proposed_replacement_image"]:
             require(target in lookup and target != photo["image_id"], "Invalid proposed visual reassignment.")
+            replacement = lookup[target]
+            require(photo["verdict"] == replacement["verdict"] == "visually inconsistent"
+                    and json.loads(photo["locator"])[0] == json.loads(replacement["locator"])[0]
+                    and len(json.loads(photo["record_ids"])) == 1,
+                    "Visual reassignments must use a mismatched reference within the same attachment.")
+        photo["replacement_locator"] = lookup[target]["locator"] if target else ""
+        photo["replacement_sha256"] = lookup[target]["sha256"] if target else ""
+        photo["replacement_observed_type"] = lookup[target]["observed_type"] if target else ""
+        photo["replacement_evidence"] = lookup[target]["evidence"] if target else ""
         photo["proposed_record_id"] = ""
         if photo["verdict"] == "unlinked image" and photo["observed_type"] == "wooden bread box":
             # The source photo and the unmatched record are in the same submission.
@@ -397,6 +442,12 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
                        and json.loads(r["source_table"])[0] == attachment]
             if len(matches) == 1:
                 photo["proposed_record_id"] = matches[0]
+    displaced = [photo for photo in photos if photo["proposed_replacement_image"]]
+    targets = {photo["proposed_replacement_image"] for photo in displaced}
+    require(len(targets) == len(displaced), "Two proposed assignments would reuse the same image.")
+    require(not targets.intersection(photo["image_id"] for photo in photos
+                                     if photo["verdict"] != "visually inconsistent"),
+            "A proposed assignment would take an image from a supported original link.")
     if gallery:
         contact = private / "ContactSheets"
         contact.mkdir(exist_ok=True)
@@ -426,12 +477,16 @@ def visual_packets(root, records, selected, candidate_pairs, gallery):
     return photos, result
 
 
-def outlier_packet(records, before, after, info, year, images):
+def outlier_packet(root, records, before, after, info, year, images):
     index = {row["record_id"]: row for row in records}
     photos = defaultdict(list)
     for photo in images:
         for key in json.loads(photo["record_ids"]):
             photos[key].append(photo)
+    arguments = root / "Working" / "PreCleaning" / "outlier_judgments.csv"
+    notes = load_judgments(arguments, ("record_id", "attribute"))
+    require(set(notes) <= {(key, attribute) for attribute, key in before.keys() | after.keys()},
+            "An outlier judgment refers to an unknown candidate.")
     results = []
     for attribute, key in sorted(before.keys() | after.keys()):
         r = index[key]
@@ -449,14 +504,27 @@ def outlier_packet(records, before, after, info, year, images):
             if edition_year <= year and abs((year - edition_year) - value) > 8:
                 context = (f"Title identifies a {edition_year} edition, about {year - edition_year} years "
                            f"before the export year. The annotated age is {value:g}. The copy could be a reprint.")
+        edition_conflict = context.startswith("Title identifies")
         if any(photo["verdict"] == "visually inconsistent" for photo in references):
             verdict = "unresolved item image mismatch"
-        elif context.startswith("Title identifies"):
+        elif edition_conflict:
             verdict = "dated edition conflicts with age"
         elif supportive:
             verdict = "plausible from source text"
         else:
             verdict = "unresolved"
+        status, treatment = "source-context rule", "Retain the value pending individual review"
+        if note := notes.get((key, attribute)):
+            treatments = {
+                "plausible genuine extreme": "Retain. Use robust summaries and report the IQR flag.",
+                "supported formatting or unit correction": "Use the supported interpretation in a separate analytical field.",
+                "demonstrably invalid value": "Keep the raw value and exclude the invalid field from analytical calculations.",
+                "unresolved suspicious value": "Retain and flag. Check sensitivity without this value where it influences a finding.",
+            }
+            require(note["original_value"] == r[attribute] and note["evidence"] and note["verdict"] in treatments,
+                    "An outlier judgment has changed source text or lacks evidence.")
+            verdict, context = note["verdict"], note["evidence"]
+            status, treatment = "individually reviewed", treatments[verdict]
         results.append(dict(record_id=key, attribute=attribute, original_value=r[attribute], diagnostic_value=value,
                             unit=info[key]["currency"] if attribute == "price_raw" else "years",
                             title=r["title"], description=r["description"], category=r["category"],
@@ -464,9 +532,129 @@ def outlier_packet(records, before, after, info, year, images):
                             revised_scopes=audit.json_cell(after.get((attribute, key), [])),
                             image_ids=audit.json_cell([photo["image_id"] for photo in references]),
                             image_verdicts=audit.json_cell([photo["verdict"] for photo in references if photo["verdict"]]),
-                            verdict=verdict, evidence=context, review_status="source-context rule",
-                            proposed_treatment="Retain the value pending stronger evidence"))
+                            verdict=verdict, evidence=context, review_status=status, proposed_treatment=treatment,
+                            edition_year_conflict=edition_conflict))
     return results
+
+
+def category_packet(root, records, categories, images):
+    notes = load_judgments(root / "Working" / "PreCleaning" / "category_judgments.csv", ("record_id",))
+    require(set(notes) <= {(row["record_id"],) for row in records}, "Unknown category decision record.")
+    aliases = {
+        "art and decor": "Home decor", "arts and crafts": "Arts and crafts",
+        "automotive accessories": "Automotive parts", "camera": "Cameras and photography",
+        "cameras and photography": "Cameras and photography", "chess": "Games and puzzles",
+        "home appliances": "Household appliances", "motorcycles": "Motorcycles and motor scooters",
+        "rugs and carpets": "Rugs", "shoes": "Footwear", "video game console": "Game consoles",
+        "video game": "Video games", "office and school supplies": "Stationery",
+    }
+    broad_by_specific = {
+        "Home and furniture": ("Home decor", "Clocks", "Lighting", "Rugs", "Tables", "Sofas and seating",
+                               "Furniture", "Dining tables and chair sets", "Wardrobes and storage cabinets",
+                               "Household accessories", "Household and everyday items", "Kitchen and household items",
+                               "Kitchen items", "Household appliances", "Gas cookers and ovens", "Microwave ovens",
+                               "Refrigerators", "Garden and outdoor gear"),
+        "Electronics and computing": ("Electronics", "Electronics and tech", "Electronics and accessories",
+                                      "Cameras and photography", "Computer monitors", "Keyboards", "Laptops",
+                                      "Mobile phones", "Smartphone", "Smartwatch", "Mobile and tablet accessories",
+                                      "Phone accessories", "Telephones"),
+        "Fashion": ("Bags", "Bags and accessories", "Clothing", "Clothing and footwear", "Clothing and accessories",
+                    "Eyewear", "Fashion accessories", "Footwear", "Jewelry", "Watches", "Watches and jewelry",
+                    "Wallets", "Wallets and small leather goods", "Luggage"),
+        "Books and recorded media": ("Books", "Science textbooks", "Recorded media"),
+        "Sports and recreation": ("Sports equipment", "Sports footwear", "Racket sports equipment",
+                                  "Camping equipment", "Fitness equipment", "Bicycles"),
+        "Transport": ("Cars", "Vehicles", "Motorcycles and motor scooters", "Automotive parts",
+                      "Electric bicycles", "Electric scooters", "Marine motors", "Vans", "Quad bikes"),
+        "Games and toys": ("Toys", "Toys and games", "Games and puzzles", "Game consoles", "Video games"),
+        "Music and instruments": ("Musical instruments", "Acoustic guitars"),
+        "Health and personal care": ("Personal care", "Personal care appliances", "Personal care accessories",
+                                     "Health and personal care", "Beauty and personal care", "Medical equipment",
+                                     "Medication", "Health supplements", "Fragrance", "Cosmetics"),
+        "Arts, collectibles and office": ("Visual art", "Arts and crafts", "Art supplies", "Antiques", "Collectibles",
+                                          "Stationery", "Stationery and office supplies"),
+        "Baby and pet products": ("Baby products", "Baby seats", "Strollers", "Pet supplies"),
+        "Tools and commercial equipment": ("Tools", "Cordless drills", "Sewing machines", "Agriculture",
+                                            "Commercial equipment"),
+        "Unknown or unresolved": ("Unknown", "Other used products"),
+    }
+    groups = {quality.category_key(label): group for group, names in broad_by_specific.items() for label in names}
+    by_record = defaultdict(list)
+    for photo in images:
+        if photo["suggested_category"] and photo["verdict"] != "visually inconsistent":
+            for key in json.loads(photo["record_ids"]):
+                by_record[key].append(photo)
+    result = []
+    for row in records:
+        key, raw = row["record_id"], row["category"]
+        base = categories[raw]
+        original = base["proposed_category"] or "Unknown"
+        photos = by_record[key]
+        suggested = {p["suggested_category"] for p in photos}
+        manual = notes.get((key,))
+        if manual:
+            label = manual["specific_category"] or "Unknown"
+            evidence = manual["evidence"]
+            status = "context proposal" if manual["specific_category"] else "reviewed, unresolved"
+        elif len(suggested) == 1:
+            label, = suggested
+            evidence = " ".join(p["evidence"] for p in photos)
+            status = "visual proposal"
+        elif len(suggested) > 1:
+            label, evidence, status = "Unknown", "Available photographs suggest different categories.", "reviewed, unresolved"
+        elif base["status"] in {"missing", "review"}:
+            label, evidence, status = "Unknown", base["reason"], "needs contextual review"
+        else:
+            label, evidence, status = original, base["reason"], "source label"
+        label = aliases.get(quality.category_key(label), label)
+        label = label[:1].upper() + label[1:].lower()
+        group = groups.get(quality.category_key(label))
+        require(group is not None, f"A proposed category lacks a broader group: {label}.")
+        require(evidence, "A proposed category lacks its basis.")
+        result.append(dict(record_id=key, raw_category=raw, specific_category=label, category_group=group,
+                           review_status=status, evidence=evidence,
+                           image_locators=audit.json_cell([json.loads(p["locator"]) for p in photos])))
+    return result
+
+
+def duplicate_recommendations(records, pairs, revised):
+    """Assign representatives only to explicitly reviewed, price-consistent groups."""
+    by_record = {row["record_id"]: row for row in records}
+    groups = {}
+    for pair in pairs:
+        recommended = pair["proposed_action"].startswith("Propose one analytical observation")
+        pair.update(duplicate_decision="retain", duplicate_group="", representative_record_id="",
+                    proposed_excluded_record_ids="[]")
+        if not recommended:
+            continue
+        left, right = (json.loads(pair[column]) for column in ("record_ids_first", "record_ids_second"))
+        require(len(left) == len(right) == 1 and left != right, "Expected two different single-record observations.")
+        members = set(left + right)
+        priced = {(revised[key]["currency"], revised[key]["price"]) for key in members}
+        require(len(priced) == 1 and all(code and value is not None for code, value in priced),
+                "Duplicate proposal contains conflicting or missing asking prices.")
+        group = members.union(*(groups.get(key, set()) for key in members))
+        groups.update({key: group for key in group})
+        pair["duplicate_decision"] = "propose consolidation"
+
+    def ranking(key):
+        row = by_record[key]
+        return (-bool(quality.recorded_listing(row)[0]),
+                -sum(not quality.missing_kind(field, row[field]) for field in quality.ANALYTICAL),
+                bool(json.loads(row["source_extras"]).get("alignment")), key)
+
+    unique = sorted({tuple(sorted(group)) for group in groups.values()})
+    group_ref = {}
+    for index, group in enumerate(unique, 1):
+        representative = min(group, key=ranking)
+        group_ref.update({key: (f"D{index:03d}", representative, [k for k in group if k != representative])
+                          for key in group})
+    for pair in pairs:
+        if pair["duplicate_decision"] == "propose consolidation":
+            group, keep, remove = group_ref[json.loads(pair["record_ids_first"])[0]]
+            pair.update(duplicate_group=group, representative_record_id=keep,
+                        proposed_excluded_record_ids=audit.json_cell(remove))
+    return unique
 
 
 def proposal(verified, outlier_rows):
@@ -476,12 +664,12 @@ def proposal(verified, outlier_rows):
     problems = verified["problems"]
     duplicates = verified["duplicates"]
     revised = verified["revised"]
-    categories = verified["categories"]
-    issues = Counter((r["attribute"], r["verdict"]) for r in outlier_rows if r["revised_scopes"] != "[]")
-    image_status = Counter(photo["verdict"] for photo in verified["images"] if photo["verdict"])
-    counts_changed = Counter(row["record_id"] for row in records
-                             if categories[row["category"]]["status"] == "proposed"
-                             and row["category"] != categories[row["category"]]["proposed_category"])
+    issues = Counter((r["attribute"], r["verdict"]) for r in outlier_rows)
+    alias_changes = sum(row["review_status"] == "source label" and row["raw_category"] != row["specific_category"]
+                        for row in verified["category_rows"])
+    contextual_changes = sum(row["review_status"] in {"visual proposal", "context proposal"}
+                             and row["raw_category"] != row["specific_category"]
+                             for row in verified["category_rows"])
     result = []
 
     def add(label, n, evidence, options, treatment, rationale, effect, analysis, reference, uncertainty, approval="Phase 3 approval"):
@@ -506,11 +694,15 @@ def proposal(verified, outlier_rows):
         "Keep missing. Do not infer a rating from appearance.", "Use observed ordinal scores and report n.",
         "Mode, subjective visual rating, available cases")
     gap("category", "Missing category", "One category was originally blank.",
-        "Review item context and use Unknown for reporting if it remains unresolved.", "Keep Unknown distinct from product categories.")
+        "Assign phone accessories to the documented protective phone case after approval. Use Unknown when evidence is insufficient.",
+        "Keep Unknown distinct from product categories.")
     gap("description", "Missing description", "Blank and explicit placeholders occur.",
         "Leave text unavailable. Preserve title and other attributes.", "Restrict text comparisons to usable descriptions.")
-    gap("image_links", "Missing image association", "One raw item has no associated file.",
-        "Retain the item and leave image evidence unavailable.", "Tabular analysis can include this observation.")
+    if gaps["title"]:
+        gap("title", "Missing title", "Missing text is represented in the raw source.",
+            "Keep missing and use independently supported item context.", "Retain other applicable attributes.")
+    gap("image_links", "Missing image association", "One raw row lacks a link. The unlinked photo visibly shows its distinctive wooden bread box.",
+        "Propose the same-attachment visual link. Retain the record regardless of image coverage.", "Tabular analysis can include this observation.")
     add("Ambiguous currency", len(problems.get(("currency_raw", "ambiguous_label"), [])),
         "A bare dollar label does not identify a currency. Source text supplied no explicit code.",
         "Guess USD, use a submission default, or leave unresolved", "Require item-specific currency evidence.",
@@ -525,36 +717,50 @@ def proposal(verified, outlier_rows):
         "Published rubric defines scores for all five named levels.", "Keep mixed text, or use official ordinal codes",
         "Apply the rubric to exact labels and matching pairs.", "The assignment explicitly supplies the codebook.",
         "Populate a separate ordinal field.", "Comparable condition counts and plots.", "A1 §5", "Scores remain subjective.")
-    add("Verified duplicate observations", quality.count_rows(duplicates["exact"]),
-        "No exact seven-field duplicates were detected. Photo reuse alone does not establish listing identity.",
-        "Retain, select a representative, or combine complementary fields", "Only deduplicate on verified same-observation evidence.",
-        "Separate products or listings must remain separate.", "Current evidence does not support deletion.",
-        "Potential review pairs remain available.", "Slide 26; A2 §3", "Listing identity is unresolved.")
-    add("Unresolved duplicate candidates", len({key for row in verified["pairs"] if "multiple photos for one item" not in row["evidence_basis"]
+    add("Strong duplicate observation groups", sum(map(len, verified["duplicate_groups"])),
+        "Distinctive photos or physical details agree with listing text and compatible prices.",
+        "Retain, select a representative, or combine complementary fields", "Use the documented representative if approved.",
+        "A common item scene and independent matching attributes support a common observation.",
+        f"Exclude {verified['duplicate_excess']} extra analytical rows only if approved. Preserve all raw rows.",
+        "Reduce duplicated influence. Report sensitivity using all source rows.", "Slide 26; A2 §3",
+        "The export has no independent listing identifiers for these groups.")
+    add("Remaining duplicate comparisons", len({key for row in verified["pairs"] if row["duplicate_decision"] == "retain"
+                                                and "multiple photos for one item" not in row["evidence_basis"]
                                                 for column in ("record_ids_first", "record_ids_second")
                                                 for key in json.loads(row[column])}),
         "Exact photographs, compatible item attributes, or perceptual similarity.", "Retain, merge, or pick a representative",
         "Retain until source listing or capture identity is established.", "Similarity may reflect reused or stock images.",
         "Track pair verdicts without deleting observations.", "Avoid false duplicate removals.", "Slide 26; A2 §3",
-        "Visual and listing evidence is incomplete.")
-    add("Category spelling and aliases", len(counts_changed), "Explicit map retains specific product types.",
+        "Distinct items, stock photos, or possible repricing need separate treatment.")
+    add("Category spelling and aliases", alias_changes, "Explicit map retains specific product types.",
         "Keep raw labels, force a fixed taxonomy, or use two levels", "Use conservative specific labels and a separate broader group.",
         "Broader cohorts gain sample size while specific meanings remain visible.", "Keep raw, specific and group fields.",
         "Use broader groups for sparse comparisons and specific labels for context.", "Slides 26–27; A1 §3",
-        "Broad and conflicting assignments still need review.")
+        "Category specificity is constrained by recorded context.")
+    add("Category context proposals", contextual_changes, "Title, description and visible type informed the row-level mapping.",
+        "Keep raw label, infer from one weak cue, or classify from corroborating context",
+        "Apply documented context decisions and leave genuinely uncertain cases unresolved.",
+        "Clear item evidence supports specific classification while preserving broad groups for EDA.",
+        "Keep original, specific and broader labels.", "Higher comparability without erasing product distinctions.",
+        "Slide 26; A1 §3", "An uncertain purpose or product subtype remains flagged.")
     add("Price formatting", sum(v["price_kind"] == "supported_grouping" for v in revised.values()),
         "Six exact forms approved by the user. Other grouping has direct formatting evidence.",
         "Strip all commas, reject all commas, or parse evidenced forms", "Parse only documented grouping.",
         "Identical comma punctuation can have different locale meanings.", "Retain raw text and add a parsed amount.",
         "Restores valid prices to compatible analyses.", "Slides 20, 26", "None for the six approved forms.", "Interpretation approved")
+    add("Zero price", len(problems.get(("price_raw", "zero_documented"), [])),
+        "The description explicitly says the item was offered free.", "Discard zero, impute, or preserve the free offer",
+        "Retain zero and expose a free-offer indicator.", "Zero represents a meaningful offer here.",
+        "Preserve one numeric observation.", "Report free offers separately from paid-price summaries.",
+        "Slides 20, 23; A2 §3", "A free offer is an asking amount, independent of whether any sale occurred.")
     add("Age-unit inconsistencies", sum(v["age_kind"] in {"months", "years_text"} for v in revised.values()),
         "Explicit month/year text, course years default, and approved 3 moths typo.",
         "Leave mixed units, infer unsupported units, or record evidence-based years", "Use stated units and Assignment 1 default.",
         "Makes ages comparable while retaining source meaning.", "Add age in years and unit evidence.",
         "Preserves fractional ages.", "A1 §§2, 4; slide 26", "Estimated ages still have measurement error.", "Typo approved")
     for attribute, label in (("price_raw", "price"), ("age_raw", "age")):
-        plausible = issues[attribute, "plausible from source text"]
-        uncertain = sum(n for (field, _), n in issues.items() if field == attribute) - plausible
+        plausible = issues[attribute, "plausible genuine extreme"]
+        uncertain = issues[attribute, "unresolved suspicious value"]
         for count, prefix in ((plausible, "Plausible genuine"), (uncertain, "Suspicious or unresolved")):
             add(f"{prefix} {label} outliers", count,
                 "IQR and context from original titles, descriptions, units and category.",
@@ -562,16 +768,28 @@ def proposal(verified, outlier_rows):
                 "Retain pending corroboration. Use medians, IQR and sensitivity summaries.",
                 "Long tails are expected. Range-based edits distort real market variation.",
                 "Store quality flags separately.", "Show robust and conventional summaries with n.",
-                "Slides 23–24, 41, 44, 46, 69–70", "Individual value and provenance review is pending where flagged.")
+                "Slides 23–24, 41, 44, 46, 69–70", "Precise value, date, authenticity or scope may remain uncertain.")
     add("Malformed title or description", verified["source_stats"]["unquoted_prose_boundary"],
         "The raw file preserves exact fragments and verified trailing fields.", "Invent a boundary, drop, or recover from source",
         "Condition text-only use on provenance. Retain all recoverable item fields.",
         "The original text boundary cannot be verified from unlabeled fragments.", "Keep fragments and a text-quality flag.",
         "Numerical analysis can still use the verified suffix.", "Slides 20, 26", "Original prose boundaries unresolved.")
-    add("Visually inconsistent association", image_status["visually inconsistent"], "Recorded visual judgments only.",
+    add("Visually inconsistent association", len({key for photo in verified["images"] if photo["verdict"] == "visually inconsistent"
+                                                  for key in json.loads(photo["record_ids"])}),
+        "Actual visual judgments and same-attachment comparisons.",
         "Relink, detach, or retain the raw association with a flag", "Require item-specific evidence before relinking.",
         "A plausible replacement must be supported independently.", "Preserve raw links and add review status.",
-        "Exclude unresolved links from image-dependent analysis.", "A1 §7; A2 §2", "Counts are limited to completed visual review.")
+        "Exclude unresolved links from image-dependent analysis.", "A1 §7; A2 §2",
+        "Retain flagged source links where no supported replacement exists.")
+    add("Limited visual evidence", len({key for photo in verified["images"]
+                                        if photo["verdict"] in {"uncertain", "insufficient visual information"}
+                                        for key in json.loads(photo["record_ids"])}),
+        "Enlarged views distinguish packaging, partial bundles and unconfirmed variants.",
+        "Preserve with a confidence flag, or omit from image-specific tasks",
+        "Keep original and mark the unresolved detail.",
+        "Visibility limitations do not invalidate the underlying item observation.",
+        "Preserve references and evidence.", "Use supported photographs for image-dependent work.",
+        "A1 §7; A2 §2", "Images alone cannot authenticate items, exact ratings, or listing identity.")
     add("Currency conversion reference", verified["price_n"], "Resolved currency and usable raw price, including a documented zero.",
         "Use within-currency comparisons or one fixed ILS conversion snapshot", "Store original and ILS amounts separately.",
         "A dated published snapshot enables comparisons and repeatability.", "Multiply Decimal values by ILS per unit.",
@@ -594,9 +812,19 @@ def write_reports(root, checked, outlier_rows):
     confirmed_mismatches = sum(p["verdict"] == "visually inconsistent" and p["structural_status"] == "confirmed"
                                for p in checked["images"])
     assignments = {key for p in checked["images"] if p["suggested_category"] for key in json.loads(p["record_ids"])}
-    dated_editions = [row for row in outlier_rows if row["verdict"] == "dated edition conflicts with age"]
-    full = sum(j.values()) == len(checked["images"]) and not duplicate_coverage["not yet reviewed"]
+    dated_editions = [row for row in outlier_rows if row["edition_year_conflict"]]
+    outlier_coverage = Counter(row["review_status"] for row in outlier_rows)
     unrelated = sum(r["structural_status"] == "unlinked" for r in checked["images"])
+    replacements = sum(bool(photo["replacement_locator"]) for photo in checked["images"])
+    new_links = sum(bool(photo["proposed_record_id"]) for photo in checked["images"])
+    categories_by_status = Counter(row["review_status"] for row in checked["category_rows"])
+    full = (sum(j.values()) == len(checked["images"]) and not duplicate_coverage["not yet reviewed"]
+            and outlier_coverage["individually reviewed"] == len(outlier_rows)
+            and not categories_by_status["needs contextual review"])
+    label_changes = Counter(row["review_status"] for row in checked["category_rows"]
+                            if row["raw_category"] != row["specific_category"])
+    specific_count = len({row["specific_category"] for row in checked["category_rows"]})
+    group_count = len({row["category_group"] for row in checked["category_rows"]})
     dates_by_currency = Counter(row["rate_date"] for row in checked["fx_reference"] if row["currency_code"] != "ILS")
     old = Counter(k[0] for k in checked["outliers"])
     new = Counter(k[0] for k in checked["revised_outliers"])
@@ -605,6 +833,10 @@ def write_reports(root, checked, outlier_rows):
         f"- Reconciled {checked['counts'][0]} original attachments, {checked['counts'][2]} versions and "
         f"{checked['counts'][1]} student groups. The export's dated attachment records and numbered sequence "
         "corroborate selection order. The source system's submission timestamps remain unavailable.",
+        f"- Rechecked {checked['selected_count']} latest submissions and excluded "
+        f"{checked['counts'][2] - checked['selected_count']} older versions. "
+        "The nonstandard row and image counts remain "
+        + quality.display_counts(checked["count_exceptions"]) + ".",
         f"- Verified {n:,} rows against the selected source tables with separate CSV and workbook reads. "
         "The integrated records retain source IDs, fields, currency and age header evidence, hyperlinks and "
         "structural exceptions. The approved workbook remains authoritative and the extra item row remains present.",
@@ -615,6 +847,12 @@ def write_reports(root, checked, outlier_rows):
         "", "## Quantitative verification and revised interpretation", "",
         f"- Reconciled all {len(integration.COLUMNS)} missingness counts and rates, category frequencies and "
         "the Phase 2 price, currency, age and condition frequency table. No baseline repair was required.",
+        "- The Phase 2 table covers all columns. The main missing analytical values are "
+        + ", ".join(f"{label} {sum(checked['missing'][field][0].values()):,} "
+                    f"({100*sum(checked['missing'][field][0].values())/n:.2f}%)"
+                    for field, label in (("age_raw", "age"), ("price_raw", "price"), ("currency_raw", "currency"),
+                                         ("condition_raw", "condition"), ("description", "description"),
+                                         ("category", "category"))) + ".",
         f"- Independently recomputed the original {len(checked['scopes'])} IQR scopes and "
         f"{len(checked['revised_scopes'])} scopes after the approved interpretations. Checked quartiles, mean, "
         "median, sample SD, Pearson skewness and each tail count. Outliers are assessed within original currency or in years.",
@@ -632,11 +870,19 @@ def write_reports(root, checked, outlier_rows):
         "- Recorded visual verdicts are " + quality.display_counts(j) + ".",
         f"- {confirmed_mismatches} original file-reference confirmations have a visual mismatch. "
         "The initial check matched written names correctly. Visual review now separates those source-reference "
-        "errors from mapping code. Proposed same-submission replacements and product-category suggestions are local.",
-        f"- Product context supports {len(assignments)} proposed category changes. Keep specific cleaned categories "
-        "and a separate broad group. The visual map keeps the raw values and marks all proposals for approval.",
+        f"errors from mapping code. There are {replacements} proposed same-attachment replacements and "
+        f"{j['visually inconsistent'] - replacements} mismatches without a supported replacement. "
+        "The proposal requires detaching the old associations together before applying replacements and checks that "
+        "no proposed target is reused or taken from a visually supported link.",
+        "- Four neighboring image observations were initially assigned the next preview's product description. "
+        "Larger source previews established the shoe and three car verdicts. Only review notes changed.",
+        f"- Photo observations supplied category suggestions for {len(assignments)} rows. "
+        f"The full proposal covers all {n:,} rows with {specific_count} specific labels and {group_count} broader groups, "
+        "including an unresolved group where evidence is insufficient. Row decisions are "
+        + quality.display_counts(categories_by_status) + ". Proposed label changes by basis are "
+        + quality.display_counts(label_changes) + ".",
         "- The previously unlinked file visibly shows a wooden box labeled Bread. A matching record from the same "
-        "submission has the only unresolved image association. This now supports a plausible link. The source lacks "
+        f"submission has the only unresolved image association. This supports {new_links} proposed additional link. The source lacks "
         "an exact filename match or unique identifier, so approval is pending.",
         f"- Compared files using full-frame and central-crop difference hashes with a mean-color gate. "
         f"The candidate list has {len(checked['pairs'])} image pairs including earlier duplicate candidates and "
@@ -644,9 +890,18 @@ def write_reports(root, checked, outlier_rows):
         f"- Actually inspected {duplicate_coverage['reviewed']} pairs side by side. "
         f"{duplicate_coverage['not yet reviewed']} pairs remain. Recorded findings are "
         + quality.display_counts(duplicate_findings) + ". A reused photograph alone cannot establish listing identity.",
-        f"- The outlier inventory supplies source-context evidence for {len(outlier_rows)} record/attribute cases. "
-        "Rules flag historical and high-value asset context. Individual semantic decisions that lack direct evidence "
-        "remain provisional. No item is removed on the basis of IQR, visual resemblance, or image availability.",
+        f"- Proposed {len(checked['duplicate_groups'])} consolidated groups affecting "
+        f"{sum(map(len, checked['duplicate_groups']))} observations, with {checked['duplicate_excess']} "
+        "proposed analytical exclusions. Distinctive photo scenes and matching listing attributes support these groups. "
+        "When strong physical-item matches carry different asking prices, retain those price variants and flag them for sensitivity analysis. "
+        "Choose representatives with saved listing evidence and fuller analytical fields, followed by stronger source alignment and a stable ID tie-break. "
+        "Conflicting values stay in the raw records and the private review inventory.",
+        f"- Individually reviewed {outlier_coverage['individually reviewed']} of {len(outlier_rows)} record/attribute cases. "
+        "Price cases are " + quality.display_counts(Counter(row["verdict"] for row in outlier_rows if row["attribute"] == "price_raw")) +
+        ". Age cases are " + quality.display_counts(Counter(row["verdict"] for row in outlier_rows if row["attribute"] == "age_raw")) + ".",
+        "- Review used product context, compatible original currencies or years, and images where useful. "
+        "Some apparent extremes reflect real premium goods, vintage collections, or a business facility. "
+        "Product or quantity uncertainty still limits several estimates.",
         f"- {len(dated_editions)} flagged book age(s) disagree materially with the stated edition year. "
         "Reprints or an estimate referring to time owned could explain the gap. Keep the original age and seek "
         "copy-specific evidence before replacing it.",
@@ -657,6 +912,10 @@ def write_reports(root, checked, outlier_rows):
         "- Prefer direct Bank of Israel reference rates. Cross ECB quotes through EUR, UAE quotes through AED or "
         "USD, and the Libya and Taiwan quotes through USD. Each rate records its direction, operands, date, and source. "
         "This is a fixed contemporary equivalent, with no claim about historical item collection values or executable trades.",
+        f"- The Bank of Israel and ECB quote 3.6627 and 3.6618 ILS per EUR on the same publication date, a difference of "
+        f"{checked['eur_difference'][0]} ILS or {checked['eur_difference'][1]:.4f}% of the direct quote. "
+        "The banks publish separate reference series. Use the Bank of Israel rate for direct EUR amounts and matching ECB "
+        "numerator and denominators for INR and SGD. The quote date alone cannot identify the cause of the difference.",
         f"- {checked['price_n']:,} rows have sufficient price and currency evidence for a future ILS value. "
         f"{checked['unresolved_currency']} rows have unresolved currency identity. Price, title and description "
         f"contain {checked['currency_clues']} explicit currency cues among those rows. A blank or generic dollar "
@@ -686,10 +945,10 @@ def write_reports(root, checked, outlier_rows):
         "and skewness, and 68–71 for histograms, boxplots and IQR. Assignment 1 §§2, 4, 5 and 7 define units, codes "
         "and linkage expectations. Assignment 2 §§2–4 define the integration, quality and EDA requirements.",
         "", "## Readiness", "",
-        "**The required visual checkpoint is incomplete. Phase 3 remains blocked.**" if not full else
-        "**The visual review ledger is complete. Phase 3 still requires explicit approval.**",
-        "The decision table records proposals and approval status. The remaining visual, category-context and "
-        "outlier cases require individual review or an explicit decision to proceed with their uncertainty.",
+        "**Review coverage is incomplete. Phase 3 remains blocked.**" if not full else
+        "**The checkpoint is ready for review. Phase 3 requires explicit approval.**",
+        "Approve the proposal to apply the supported category and image mappings, consolidate the strong duplicate groups, "
+        "and carry unresolved values and associations forward with flags. No cleaning has been applied.",
         "",
     ]
     table = ["# Proposed Phase 3 cleaning decisions", "",
@@ -742,6 +1001,7 @@ def run(root, gallery=False):
                 if i["issue_type"] == "iqr_outlier_candidate"}
     require(previous == outliers.keys(), "Previously reported IQR candidates differ.")
     fx_reference = rates({value["currency"] for value in info.values() if value["currency"]})
+    eur_difference = rate_check(fx_reference)
     fx = {r["currency_code"]: Decimal(r["ils_per_unit"]) for r in fx_reference}
     revised, price_n, age_n, complete_n, sensitivity = approved_diagnostics(records, info, fx)
     revised_scopes, revised_outliers, prices, ages, *_ = quality.outlier_assessment(records, revised, problems, [], year)
@@ -758,16 +1018,24 @@ def run(root, gallery=False):
             "Selected exact-image group count differs from Phase 2.")
     require(audit.digest_file(raw).hex() == digest and integration.verify_originals(root, manifest) == original,
             "Original data changed during verification.")
-    outlier_rows = outlier_packet(records, outliers, revised_outliers, revised, year, images)
+    outlier_rows = outlier_packet(root, records, outliers, revised_outliers, revised, year, images)
+    category_rows = category_packet(root, records, categories, images)
+    duplicate_groups = duplicate_recommendations(records, pairs, revised)
     for name, rows in (("pre_cleaning_visual_review.csv", images), ("pre_cleaning_duplicate_review.csv", pairs),
-                       ("pre_cleaning_exchange_rates.csv", fx_reference), ("pre_cleaning_outlier_review.csv", outlier_rows)):
+                       ("pre_cleaning_exchange_rates.csv", fx_reference), ("pre_cleaning_outlier_review.csv", outlier_rows),
+                       ("pre_cleaning_category_review.csv", category_rows)):
         integration.write_output(root / "Audit" / name, quality.csv_output(rows, list(rows[0])))
     result = dict(counts=counts, source_stats=source_stats, source_review=source_review, excluded=excluded,
+                  selected_count=len(selected), count_exceptions=Counter(
+                      f"{row['data_rows']} item rows / {row['image_files']} images" for row in selected
+                      if (int(row["data_rows"]), int(row["image_files"])) != (15, 15)),
                   records=records, missing=missing, problems=problems, digest=digest, categories=categories,
                   duplicates=duplicates, scopes=scopes, outliers=outliers, revised_scopes=revised_scopes,
                   revised_outliers=revised_outliers, revised=revised, price_n=price_n, age_n=age_n,
                   complete_n=complete_n, sensitivity=sensitivity, images=images, pairs=pairs,
-                  fx_reference=fx_reference, unresolved_currency=len(unresolved_currency), currency_clues=currency_clues)
+                  fx_reference=fx_reference, eur_difference=eur_difference, unresolved_currency=len(unresolved_currency),
+                  currency_clues=currency_clues, category_rows=category_rows, duplicate_groups=duplicate_groups,
+                  duplicate_excess=sum(len(group) - 1 for group in duplicate_groups))
     write_reports(root, result, outlier_rows)
     require(audit.digest_file(raw).hex() == digest, "The raw file changed before verification completed.")
     return result
