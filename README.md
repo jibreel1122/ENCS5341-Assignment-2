@@ -8,7 +8,7 @@ Phase 2 is complete. The raw baseline contains 1,801 observations from 120 selec
 
 The integration used the approved Excel source for the one conflicting CSV/Excel pair. It verified 1,803 standalone image locators, including 1,801 distinct image hashes. The CSV records 1,507 image associations confirmed by path or filename, 293 plausible associations, and one unmatched record. One image remains unlinked. Twelve rows preserve an uncertain title/description boundary in their original CSV fragments.
 
-The quality assessment compares prices within currency and uses Assignment 1's age and condition rules. Its proposed category map, duplicate candidates, IQR results, diagnostic plot, and record-level findings are generated locally. Phase 3 awaits approval.
+The quality assessment compares prices within currency and uses Assignment 1's age and condition rules. Its proposed category map, duplicate candidates, IQR results, diagnostic plot, and record-level findings are generated locally. The pre-cleaning checkpoint independently verifies source rows and IQR results, prepares a fixed ILS rate reference, and tracks visual review coverage. Phase 3 awaits approval.
 
 ## Project layout
 
@@ -17,6 +17,7 @@ The quality assessment compares prices within currency and uses Assignment 1's a
 | `Scripts/phase0_audit.py` | Verify the bulk export, select submissions, and audit tables and images |
 | `Scripts/phase1_integration.py` | Integrate the selected tables and preserve original values and source references |
 | `Scripts/phase2_quality_assessment.py` | Check the baseline hash and reproduce data-quality findings and diagnostics |
+| `Scripts/pre_cleaning_verification.py` | Verify prior audit results and generate local review inventories and the cleaning proposal |
 | `requirements.txt` | Python dependencies |
 | `LocalData/` | Private local inputs for collaborators |
 | `LocalData/Audit/` | Local manifest, issue inventory, and audit summaries |
@@ -33,6 +34,7 @@ Obtain the course-authorized bulk ZIP through the approved course channel. Place
 python Scripts/phase0_audit.py --root LocalData --export class-submissions.zip
 python Scripts/phase1_integration.py --root LocalData
 python Scripts/phase2_quality_assessment.py --root LocalData
+python Scripts/pre_cleaning_verification.py --root LocalData
 ```
 
 Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run the scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place. Phase 2 checks the baseline digest before and after assessment and writes only `Audit/phase2_*` outputs.
@@ -40,3 +42,5 @@ Use the actual ZIP filename in the command. For the existing course workspace wi
 The raw CSV and local audit files contain student IDs and original paths. Authorized collaborators can regenerate them locally. Read source value columns as strings to preserve identifiers, blanks, and literal placeholders. `source_table` and the locators in `image_links` are JSON arrays. The first element is relative to the source root and subsequent elements locate members inside archives.
 
 Share code, aggregate findings, and reviewed notebooks through GitHub. Review notebook outputs and any final deliverables for sensitive data before committing them. Keep course PDFs and student inputs in the approved course channel.
+
+Add `--contact-sheets` to the checkpoint command to produce private previews in the source root's `Working/PreCleaning/ContactSheets/`. The checkpoint merges saved human judgments from `Working/PreCleaning/visual_judgments.csv` and `duplicate_judgments.csv` when available. Without those local judgments, the generated inventory explicitly marks images and pairs as unreviewed. Obtain approved review files through the same private course channel as the sources. Review spreadsheets contain source titles, text and paths and stay outside Git.
