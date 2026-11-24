@@ -1,0 +1,18 @@
+# Share project code and reviewed documentation. Keep local data out by default.
+/*
+!/.gitignore
+!/README.md
+!/requirements.txt
+!/Scripts/
+!/Notebooks/
+!/Docs/
+
+/Scripts/*
+!/Scripts/*.py
+/Notebooks/*
+!/Notebooks/*.ipynb
+/Docs/*
+!/Docs/*.md
+
+__pycache__/
+.ipynb_checkpoints/
