@@ -4,7 +4,7 @@ A reproducible Python workflow for auditing, integrating, cleaning, and explorin
 
 ## Progress
 
-Phase 3 is complete locally. The raw baseline contains 1,801 observations from 120 selected submissions, 21 columns, and 132 distinct nonblank category strings. The cleaned dataset preserves original values and adds analytical fields and value-origin flags. Phase 4 awaits review.
+Phase 3 has completed its final review. The raw baseline contains 1,801 observations from 120 selected submissions, 21 columns, and 132 distinct nonblank category strings. The cleaned dataset contains 1,751 observations from all 120 students and 38 columns. It accounts for 50 exclusions across 41 reviewed duplicate groups and has complete analytical age, condition and ILS price fields. Value-origin flags preserve the distinction between source values and estimates. Phase 4 awaits approval.
 
 The integration used the approved Excel source for the one conflicting CSV/Excel pair. It verified 1,803 standalone image locators, including 1,801 distinct image hashes. The CSV records 1,507 image associations confirmed by path or filename, 293 plausible associations, and one unmatched record. One image remains unlinked. Twelve rows preserve an uncertain title/description boundary in their original CSV fragments.
 
@@ -18,6 +18,7 @@ The quality assessment compares prices within currency and uses Assignment 1's a
 | `Scripts/phase1_integration.py` | Integrate the selected tables and preserve original values and source references |
 | `Scripts/phase2_quality_assessment.py` | Check the baseline hash and reproduce data-quality findings and diagnostics |
 | `Scripts/pre_cleaning_verification.py` | Verify prior audit results and generate local review inventories and the cleaning proposal |
+| `Scripts/phase3_duplicate_review.py` | Generate independent text and photograph candidates for local review |
 | `Scripts/phase3_cleaning.py` | Apply reviewed decisions, evaluate imputation and validate the cleaned dataset |
 | `requirements.txt` | Python dependencies |
 | `LocalData/` | Private local inputs for collaborators |
@@ -37,6 +38,7 @@ python Scripts/phase0_audit.py --root LocalData --export class-submissions.zip
 python Scripts/phase1_integration.py --root LocalData
 python Scripts/phase2_quality_assessment.py --root LocalData
 python Scripts/pre_cleaning_verification.py --root LocalData
+python Scripts/phase3_duplicate_review.py --root LocalData
 python Scripts/phase3_cleaning.py --root LocalData
 ```
 
@@ -50,4 +52,6 @@ Add `--contact-sheets` to the checkpoint command to produce private previews in 
 
 The checkpoint generates the report and decision table under `Audit/` alongside local image, duplicate, category and outlier review inventories and the fixed exchange-rate table. The documented 25 November 2026 retrieval uses published quotes dated 24 November 2026 plus the ILS identity. Reproduction uses the frozen quote operands and requires no exchange-rate refresh.
 
-Before running Phase 3, place the authorized `phase3_source_judgments.csv` alongside the other private decisions in `Working/PreCleaning/` under the data root. The script writes `marketplace_cleaned.csv`, `Audit/phase3_summary.md`, and `Audit/phase3_cleaning_log.csv`. The age, condition and price method columns let later analysis compare completed results with source-valued cases. Source-valued methods are `observed`, `corrected`, `converted`, and `recovered_source`. A price can remain blank if the original amount cannot be used and the local data lacks a defensible comparison. Transfer source judgments and generated datasets through the course-approved private channel.
+Before running Phase 3, place the authorized `phase3_source_judgments.csv` and `phase3_price_evidence.csv` with the other private decisions in `Working/PreCleaning/` under the data root. Place `judgments.csv` in its `Phase3DuplicateReview/` subdirectory. The duplicate scan regenerates `candidates.csv` there from the corrected image associations, listing references and item text. Its optional `--contact-sheets` creates local previews. Cleaning checks the judgment coverage and photo hashes before consolidating reviewed groups. Frozen price evidence records matching listings, comparable asks or eligible observed local donors.
+
+Cleaning writes `marketplace_cleaned.csv`, `Audit/phase3_summary.md`, and `Audit/phase3_cleaning_log.csv`. The age, condition and price method columns support comparisons of completed and source-valued cases. Source-valued methods are `observed`, `corrected`, `converted`, and `recovered_source`. Values estimated with limited market or broad age evidence carry quality flags. Transfer the private judgments and generated datasets through the course-approved channel.

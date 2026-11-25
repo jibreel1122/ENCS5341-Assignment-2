@@ -10,6 +10,7 @@ import re
 import statistics as stats
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
@@ -279,6 +280,105 @@ def duplicate_groups(records, pairs, links, values, log):
         related[key] = cluster - {key}
     require(drop <= by_key.keys(), "A duplicate exclusion names an unknown observation.")
     return representatives, drop, related
+
+
+def final_duplicate_pairs(root, records, prior, images, links, values):
+    folder = root / "Working" / "PreCleaning" / "Phase3DuplicateReview"
+    candidates = integration.read_csv(folder / "candidates.csv")[0]
+    judgments = integration.read_csv(folder / "judgments.csv")[0]
+    reviewed = {(row["first"], row["second"]): row for row in judgments}
+    require(len(reviewed) == len(judgments) == len(candidates)
+            and reviewed.keys() == {(row["first"], row["second"]) for row in candidates},
+            "Final duplicate review is incomplete.")
+    by_id = {row["record_id"]: row for row in records}
+    additions = []
+    findings = {"distinct": "distinct", "similar": "similar", "stock-like": "stock-like",
+                "related": "same item likely", "uncertain": "uncertain", "consolidate_copy": "copy",
+                "consolidate_views": "same item, different view"}
+    for candidate in candidates:
+        a, b = candidate["first"], candidate["second"]
+        row = reviewed[a, b]
+        require(all(row[key] == value for key, value in candidate.items()) and a < b
+                and row["verdict"] in findings and row["evidence"], "A final duplicate judgment is stale or invalid.")
+        quoted = [quality.recorded_listing(by_id[key])[0] for key in (a, b)]
+        listing = ("same saved address" if quoted[0] == quoted[1] else "different saved addresses") if all(quoted) else ""
+        locators = {}
+        for side, key in (("first", a), ("second", b)):
+            image_id = row[f"{side}_image"]
+            photo = images[image_id] if image_id else None
+            locator = photo["locator"] if photo else "[]"
+            require((photo is not None and photo["sha256"] == row[f"{side}_sha256"]
+                     and tuple(json.loads(locator)) in links[key]) or (photo is None and not links[key]),
+                    "Final duplicate judgment differs from the corrected photo evidence.")
+            locators[f"{side}_locator"] = locator
+        merge = row["verdict"].startswith("consolidate_")
+        additions.append(dict(locators, record_ids_first=audit.json_cell([a]), record_ids_second=audit.json_cell([b]),
+                              visual_finding=findings[row["verdict"]], listing_evidence=listing,
+                              evidence=row["evidence"], review_status="reviewed",
+                              proposed_action="Propose one analytical observation" if merge else "Retain"))
+    combined = [dict(row) for row in prior] + additions
+    revised = {key: {"price": fields[0], "currency": fields[1]} for key, fields in values.items()}
+    review.duplicate_recommendations(records, combined, revised)
+    require(all(old["duplicate_decision"] == new["duplicate_decision"] for old, new in zip(prior, combined)),
+            "Earlier approved decisions changed during regrouping.")
+    return combined, Counter(row["verdict"] for row in judgments)
+
+
+def apply_price_evidence(path, rows, dropped, related, rates, log):
+    """Use frozen public asks or explicitly reviewed eligible local comparables."""
+    evidence = integration.read_csv(path)[0]
+    by_record = defaultdict(list)
+    for entry in evidence:
+        by_record[entry["record_id"]].append(entry)
+    methods = {}
+    for key, entries in sorted(by_record.items()):
+        row = rows[key]
+        require(key not in dropped and row["price_ils"] is None, "Price evidence would modify a valued or excluded row.")
+        estimates, details, donor_ids, seen = [], [], [], set()
+        recovered = entries[0]["kind"] == "matched_listing"
+        for entry in entries:
+            kind, url, donor_id = (entry[field] for field in ("kind", "source_url", "donor_record_id"))
+            require(entry["evidence"] and (url, donor_id, entry["evidence"]) not in seen, "Price evidence is empty or repeated.")
+            seen.add((url, donor_id, entry["evidence"]))
+            require(kind in {"matched_listing", "market_ask", "observed_donor"}
+                    and (kind == "matched_listing") == recovered, "Incompatible types of price evidence.")
+            if kind == "observed_donor":
+                donor = rows[donor_id]
+                require(donor_id not in dropped and donor_id != key and donor_id not in related.get(key, set())
+                        and donor["student_id"] != row["student_id"] and donor["price_method"] in MEASURED
+                        and donor["price_ils"] is not None and donor["price_ils"] > 0
+                        and "price_source_review" not in donor["quality_flags"], "Ineligible manual price donor.")
+                estimates.append(donor["price_ils"])
+                donor_ids.append(donor_id)
+                details.append(f'{donor["price_ils"]} observed ILS. {entry["evidence"]}')
+                continue
+            retrieved = date.fromisoformat(entry["retrieved_on"])
+            observed_date = entry["quoted_on"]
+            require(url.startswith("https://") and (not observed_date or date.fromisoformat(observed_date) <= retrieved),
+                    "External price evidence needs a URL and valid dates.")
+            amount, quantity = decimal(entry["amount"]), int(entry["quantity"])
+            code = entry["currency"]
+            require(quantity > 0 and code in rates and not donor_id, "Invalid external currency or quantity.")
+            if recovered:
+                require(len(entries) == quantity == 1 and amount == row["price_original_amount"]
+                        and row["currency_original_code"] == "Unknown", "The matched listing does not recover the source price.")
+                row["currency_original_code"] = code
+                row["quality_flags"].discard("unresolved_original_currency")
+                log_change(log, key, "currency_original_code", "recovered_source", row["currency_raw"], code,
+                           f'{entry["evidence"]} {url} (retrieved {retrieved}).')
+            estimates.append(amount * rates[code] / quantity)
+            details.append(f'{amount} {code} for {quantity}, listing date {observed_date or "unavailable"}, retrieved '
+                           f'{retrieved}. {entry["evidence"]} {url}')
+        value = stats.median(estimates).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        method = "recovered_source" if recovered else ("estimated_market_median" if len(estimates) > 1
+                                                        else "estimated_limited_comparable")
+        row.update(price_ils=value, price_method=method)
+        row["quality_flags"].discard("price_ils_unresolved")
+        if not recovered:
+            row["quality_flags"].add("price_estimate_limited_evidence")
+        log_change(log, key, "price_ils", method, row["price_raw"], value, " | ".join(details), donor_ids)
+        methods[key] = method
+    return methods
 
 
 def build_initial(records, categories, values, images, statuses, representatives, outliers, notes, log,
@@ -612,6 +712,8 @@ def fill_missing(rows, features, related, evaluation, log):
                 value, donors, basis = options[method]
                 row[field] = value
                 row[method_field] = "imputed_" + method
+                if field == "age_years" and method in {"group_median", "global_median"}:
+                    row["quality_flags"].add("age_estimate_broad_donors")
                 observed = [r[field] for r in donors]
                 spread = (min(observed), max(observed))
                 evidence = (f"{basis}. {len(donors)} eligible source-valued donors from "
@@ -659,7 +761,8 @@ def diagnostics(rows):
 
 
 
-def summary(records, rows, evidence_only, drops, log, validation, digest, clean_digest, attachments, choices, sensitivity):
+def summary(records, rows, evidence_only, drops, log, validation, digest, clean_digest, attachments, choices,
+            sensitivity, previous, duplicate_review, price_review):
     n, n_clean = len(records), len(rows)
     raw_missing = Counter({field: sum(bool(quality.missing_kind(field, r[field])) for r in records)
                            for field in quality.ANALYTICAL + ("image_links",)})
@@ -685,9 +788,12 @@ def summary(records, rows, evidence_only, drops, log, validation, digest, clean_
     final_core = ("title_clean", "description_clean", "category_clean", *FIELDS)
     final_union = sum(any(missing(r, name) for name in final_core) for r in rows)
     related = Counter((item["attribute"], item["action"]) for item in log)
-    fx_rows = sum(r["price_method"] == "converted" for r in rows)
+    foreign = Counter(r["currency_original_code"] for r in rows
+                      if r["price_method"] in {"converted", "recovered_source"} and r["currency_original_code"] != "ILS")
+    fx_rows = sum(foreign.values())
     incomplete_price = [r for r in rows if r["price_ils"] is None]
-    foreign = Counter(r["currency_original_code"] for r in rows if r["price_method"] == "converted")
+    reviewed_prices = Counter(price_review.values())
+    groups = sum(bool(r["duplicate_group"]) for r in rows)
     image_events = {a: related["image_links_clean", a] for a in ("replaced", "recovered_visual_link", "detached_mismatch")}
     outlier_flags = Counter(flag for row in rows for flag in row["quality_flags"]
                             if flag.endswith(("source_review", "iqr_candidate")))
@@ -697,16 +803,23 @@ def summary(records, rows, evidence_only, drops, log, validation, digest, clean_
         f"- Raw data contains {n:,} observations from {len({r['student_id'] for r in records})} students. "
         f"The cleaned CSV contains {n_clean:,} observations from {len({r['student_id'] for r in rows})} students "
         f"and {len(integration.COLUMNS) + len(CLEAN_COLUMNS)} columns.",
-        f"- Excluded {len(drops)} observations in {sum(bool(r['duplicate_group']) for r in rows)} reviewed groups. "
+        f"- Excluded {len(drops)} observations and retained {groups} representatives in {groups} reviewed groups "
+        f"covering {groups + len(drops)} source observations. The prior run excluded {previous[1]} across {previous[0]} groups. "
         "The corrected photo links support every consolidation edge. There were no conflicting reviewed pairs or asking prices "
         "within those groups. Retained representatives use the documented listing, field-completeness and source-alignment evidence. "
         "Conflicting subjective grades or ages remain in the raw source. The cleaning log maps every exclusion to its retained row.",
+        f"- The independent scan used full and cropped perceptual hashes, exact image hashes, listing keys, and title and "
+        f"description similarity across all raw rows without filtering by category, price, or currency. Inspected "
+        f"{sum(duplicate_review.values())} additional candidate pairs side by side. Verdicts were "
+        f"{quality.display_counts(duplicate_review)}. Consolidation requires corroborating item and listing evidence. "
+        "A photograph reused with conflicting asking prices is insufficient. The classmates' definition and pair list are unavailable.",
         f"- Reconciled the raw file hash before and after execution and compared {attachments} original attachment files "
         f"against the frozen export. Raw SHA-256 is `{digest}`.",
         f"- Cleaned CSV SHA-256 is `{clean_digest}`.",
         f"- Raw exact nonblank category labels total {len({r['category'] for r in records if r['category'].strip()})}. "
         f"The cleaned data has {len({r['category_clean'] for r in rows})} specific labels and "
-        f"{len({r['category_group'] for r in rows})} broader groups, including Unknown where evidence remains insufficient.",
+        f"{len({r['category_group'] for r in rows})} broader groups. A photograph-based category judgment covers the "
+        "previously unclassified object. Its unresolved maker, origin, and purpose do not prevent classification by visible form.",
         "", "## Missingness and evidence", "",
         "Raw missingness includes blanks, whitespace and explicit placeholders. Before-imputation counts use the retained rows "
         "after supported source work. The original currency row counts ambiguous codes as unresolved after source review.",
@@ -735,6 +848,7 @@ def summary(records, rows, evidence_only, drops, log, validation, digest, clean_
         "",
         "The age recovery review used all missing rows. Explicit model, edition, era, purchase and usage evidence "
         "produces approximate ages with separate method labels. Photographs corroborate item types and model details. "
+        "Age estimates based on broader group or global donor pools carry a separate quality flag. "
         "Condition estimates use the Assignment 1 rubric and visible wear where it is sufficiently informative. "
         "The rating of 9 is preserved in raw data. The source description supports a cleaned rating of 5.",
         f"Local judgments supplied {related['description_clean', 'recovered_visual']} missing descriptions. "
@@ -744,13 +858,13 @@ def summary(records, rows, evidence_only, drops, log, validation, digest, clean_
         f"- Applied the frozen {review.SNAPSHOT_DATE} snapshot to {fx_rows:,} retained foreign-currency prices. "
         "Counts by original code are " + quality.display_counts(foreign) + ". The ILS identity and Decimal cross-rates "
         "were verified. Currency values are current-rate equivalents and source amounts are preserved.",
-        "- Dollar labels and absent currency columns were checked against table headers, descriptions, original values and "
-        "the provided photo evidence. No missing code was identified with sufficient certainty. The original amount is "
-        "kept when available and a defensible price estimate is recorded separately in ILS.",
-        f"- {len(incomplete_price)} analytical prices remain blank. Examples include specialty items with no comparable "
-        "model, an ambiguous premium vehicle price, and a parts-only phone outside the comparable generation range. "
-        f"{sum(r['currency_original_code'] == 'Unknown' and r['price_method'].startswith('imputed_') for r in rows)} "
-        "records with unresolved original currency have a separate ILS estimate.",
+        f"- Follow-up price decisions total {sum(reviewed_prices.values())}. Methods were "
+        f"{quality.display_counts(reviewed_prices)}. Listing matches establish original currency and retain the recorded amounts. "
+        "Reviewed comparables use observed local amounts or fixed public asking prices, with the evidence date, currency, "
+        "units, and applicability recorded in the private log. Asking prices can differ from local completed transactions.",
+        f"- {len(incomplete_price)} analytical prices remain blank. "
+        f"{sum(r['currency_original_code'] == 'Unknown' and r['price_ils'] is not None for r in rows)} records with "
+        "unresolved original currency have a separate ILS estimate.",
         f"- Across the full source, applied {image_events['replaced']} within-attachment replacements and "
         f"{image_events['recovered_visual_link']} bread-box link. Detached {image_events['detached_mismatch']} "
         "visually inconsistent associations without a supported replacement. Their original links remain traceable. "
@@ -767,7 +881,7 @@ def summary(records, rows, evidence_only, drops, log, validation, digest, clean_
         "Parts-only offers use separate price pools. Donors can be filtered by observable product generation or size. "
         "Narrow, explicitly listed product types can use two independent donors when the product match is clear. "
         "Age and condition outcomes were excluded as price predictors to protect "
-        "the required relationship analyses. Thin or heterogeneous price groups can remain missing. Results on real missing "
+        "the required relationship analyses. Sparse price cohorts use separately reviewed comparables. Results on real missing "
         "targets can differ because the missingness mechanism is unknown.",
         "", "| Field | Method | Test coverage | Common n | MAE | Log1p MAE | Signed bias | Exact agreement |",
         "|---|---|---:|---:|---:|---:|---:|---:|",
@@ -825,16 +939,20 @@ def verify_export(data, records, rows, dropped, log, rates):
     require(tuple(exported[0]) == integration.COLUMNS + CLEAN_COLUMNS, "Unexpected CSV schema.")
     require({r["student_id"] for r in exported} == {r["student_id"] for r in records}, "A student was lost.")
     logs = {(r["record_id"], r["attribute"], r["action"]) for r in log}
+    expected_rows = {r["record_id"]: r for r in rows}
     for row in exported:
         key = row["record_id"]
         require(all(row[field] == source[key][field] for field in integration.COLUMNS),
                 "An original value changed during export.")
+        expected = expected_rows[key]
+        require(all(row[field] == ("" if expected[field] is None else str(expected[field])) for field in CLEAN_COLUMNS),
+                "An analytical value differs from the validated cleaning result.")
         decimal(row["age_years"])
         require(row["condition_rating"] in {"1", "2", "3", "4", "5"}, "Invalid exported condition.")
         require(row["price_currency"] == "ILS", "Unstandardized analytical price currency.")
         if row["price_ils"]:
             final = decimal(row["price_ils"])
-            if row["price_method"] in {"converted", "corrected", "observed"}:
+            if row["price_method"] in MEASURED:
                 expected = decimal(row["price_original_amount"]) * rates[row["currency_original_code"]]
                 require(final == expected.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                         "Currency conversion differs from frozen rates.")
@@ -891,11 +1009,16 @@ def run(root):
             Counter(review.APPROVED_COMMAS), "An approved price interpretation was lost or repeated.")
     log = []
     linked, statuses = clean_images(records, selected, images, log)
+    earlier_representatives, earlier_drops, _ = duplicate_groups(records, pairs, linked, price_values, [])
+    pairs, duplicate_review = final_duplicate_pairs(root, records, pairs, images, linked, price_values)
     representatives, dropped, related = duplicate_groups(records, pairs, linked, price_values, log)
     group_by_category = {row["specific_category"]: row["category_group"] for row in categories.values()}
     group_by_category["Cargo carts"] = "Transport"
+    group_by_category["Sheathed blades"] = "Arts, collectibles and office"
     clean = build_initial(records, categories, values, linked, statuses, representatives,
                           outliers, notes, log, group_by_category)
+    price_review = apply_price_evidence(root / "Working" / "PreCleaning" / "phase3_price_evidence.csv",
+                                        clean, dropped, related, rates, log)
     retained = [r for key, r in clean.items() if key not in dropped]
     types = {tuple(json.loads(p["locator"])): p["observed_type"] for p in images.values()}
     features = {key: product_features(r, " ".join(types[loc] for loc in linked[key])) for key, r in clean.items()}
@@ -906,8 +1029,9 @@ def run(root):
     export_rows = [{**row, "quality_flags": audit.json_cell(sorted(row["quality_flags"]))} for row in retained]
     data = quality.csv_output(export_rows, integration.COLUMNS + CLEAN_COLUMNS)
     report = summary(records, retained, evidence_only, dropped, log, validation, digest,
-                     hashlib.sha256(data).hexdigest(), attachment_count, choices, sensitivity)
-    verify_export(data, records, retained, dropped, log, rates)
+                     hashlib.sha256(data).hexdigest(), attachment_count, choices, sensitivity,
+                     (len(earlier_representatives), len(earlier_drops)), duplicate_review, price_review)
+    verify_export(data, records, export_rows, dropped, log, rates)
     require(audit.digest_file(raw_path).hex() == digest
             and integration.verify_originals(root, manifest) == attachment_count,
             "The raw data or original submissions changed during cleaning.")
