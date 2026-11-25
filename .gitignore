@@ -13,6 +13,15 @@
 !/Notebooks/*.ipynb
 /Docs/*
 !/Docs/*.md
+!/Docs/exchange_rates.csv
+
+# Keep course inputs and generated evidence outside the public tree.
+/LocalData/
+/Audit/
+/Working/
+/marketplace_raw.csv
+/marketplace_cleaned.csv
+/.venv/
 
 __pycache__/
 .ipynb_checkpoints/

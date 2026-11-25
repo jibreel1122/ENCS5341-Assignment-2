@@ -1,0 +1,17 @@
+currency_code,ils_per_unit,direction,rate_date,retrieval_date,source,source_url,second_source_url,numerator,denominator,calculation
+AED,0.9108236895847515316541865214,1 AED to ILS,2026-11-24,2026-11-25,Bank of Israel / Central Bank of the UAE,https://boi.org.il/PublicApi/GetExchangeRates,https://centralbank.ae/umbraco/Surface/Exchange/GetExchangeRateAllCurrency,3.345,3.6725,3.345 ILS/USD ÷ 3.6725 AED/USD
+AUD,2.2201,1 AUD to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,2.2201,1,2.2201 ILS per AUD
+CHF,3.9864,1 CHF to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,3.9864,1,3.9864 ILS per CHF
+EGP,0.0617,1 EGP to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,0.0617,1,0.0617 ILS per EGP
+EUR,3.6627,1 EUR to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,3.6627,1,3.6627 ILS per EUR
+GBP,4.3757,1 GBP to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,4.3757,1,4.3757 ILS per GBP
+ILS,1,1 ILS to ILS,2026-11-25,2026-11-25,Identity,,,1,1,Identity
+INR,0.03594687190159718063749791395,1 INR to ILS,2026-11-24,2026-11-25,European Central Bank,https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html,https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html,3.6618,101.8670,3.6618 ILS/EUR ÷ 101.8670 INR/EUR
+IQD,0.002201596020765177332105578437,1 IQD to ILS,2026-11-24,2026-11-25,Central Bank of the UAE,https://centralbank.ae/umbraco/Surface/Exchange/GetExchangeRateAllCurrency,https://centralbank.ae/umbraco/Surface/Exchange/GetExchangeRateAllCurrency,0.002422,1.100111,0.002422 AED/IQD ÷ 1.100111 AED/ILS
+JOD,4.7173,1 JOD to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,4.7173,1,4.7173 ILS per JOD
+LYD,0.5158216136195410806809770540,1 LYD to ILS,2026-11-24,2026-11-25,Bank of Israel / Central Bank of Libya,https://boi.org.il/PublicApi/GetExchangeRates,https://cbl.gov.ly/en/currency-exchange-rates/,3.345,6.4848,3.345 ILS/USD ÷ 6.4848 LYD/USD
+SAR,0.8895965952526608678578797958,1 SAR to ILS,2026-11-24,2026-11-25,Central Bank of the UAE,https://centralbank.ae/umbraco/Surface/Exchange/GetExchangeRateAllCurrency,https://centralbank.ae/umbraco/Surface/Exchange/GetExchangeRateAllCurrency,0.978655,1.100111,0.978655 AED/SAR ÷ 1.100111 AED/ILS
+SEK,0.3262,1 SEK to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,0.3262,1,0.3262 ILS per SEK
+SGD,2.589491549395375150272257973,1 SGD to ILS,2026-11-24,2026-11-25,European Central Bank,https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html,https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html,3.6618,1.4141,3.6618 ILS/EUR ÷ 1.4141 SGD/EUR
+TWD,0.1015513525000758978718236741,1 TWD to ILS,2026-11-24,2026-11-25,Bank of Israel / Central Bank of Taiwan,https://boi.org.il/PublicApi/GetExchangeRates,https://www.cbc.gov.tw/tw/lp-645-1-1-60.html,3.345,32.939,3.345 ILS/USD ÷ 32.939 TWD/USD
+USD,3.345,1 USD to ILS,2026-11-24,2026-11-25,Bank of Israel,https://boi.org.il/PublicApi/GetExchangeRates,,3.345,1,3.345 ILS per USD

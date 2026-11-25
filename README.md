@@ -29,6 +29,8 @@ The quality assessment compares prices within currency and uses Assignment 1's a
 
 ## Reproduce the audit, raw baseline, and quality assessment
 
+See the [collaboration handoff](Docs/collaboration.md) for the exact private inputs, approved dataset checksums, and files for Phase 4. The [frozen exchange-rate reference](Docs/exchange_rates.csv) is a shareable copy. The verification script generates the runtime copy under the local data root.
+
 Use Python 3.11 or later and a RAR-capable `tar.exe` on Windows or `bsdtar` on other platforms. Pillow needs AVIF support. From the repository root, install the dependencies with `python -m pip install -r requirements.txt`.
 
 Obtain the course-authorized bulk ZIP through the approved course channel. Place it and its matching extracted directory in `LocalData/`, preserving all paths inside the archive. For example, if the ZIP is `LocalData/class-submissions.zip`, extract its contents into `LocalData/class-submissions/`. Keep both copies for the byte comparison.
@@ -42,7 +44,7 @@ python Scripts/phase3_duplicate_review.py --root LocalData
 python Scripts/phase3_cleaning.py --root LocalData
 ```
 
-Use the actual ZIP filename in the command. For the existing course workspace with one matching ZIP and extracted directory at its root, run the scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place. Phase 2 checks the baseline digest before and after assessment and writes only `Audit/phase2_*` outputs.
+Use the actual ZIP filename in the command. Preserve its original basename and the matching extracted directory name because the reviewed locators include those paths. For the existing course workspace with one matching ZIP and extracted directory at its root, run the scripts without the path arguments. Phase 1 reads the validated manifest, updates the local issue inventory, and writes `marketplace_raw.csv` under the source root. It reopens the selected tables to verify source values, malformed-row evidence, header units, Excel identifiers, and image classifications. Identical reruns leave the baseline in place. Phase 2 checks the baseline digest before and after assessment and writes only `Audit/phase2_*` outputs.
 
 The raw CSV and local audit files contain student IDs and original paths. Authorized collaborators can regenerate them locally. Read source value columns as strings to preserve identifiers, blanks, and literal placeholders. `source_table` and the locators in `image_links` are JSON arrays. The first element is relative to the source root and subsequent elements locate members inside archives.
 
