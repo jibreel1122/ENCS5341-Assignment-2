@@ -1,0 +1,134 @@
+raw_category,records,proposed_category,diagnostic_family,status,reason
+,1,,,missing,No category supplied
+Accessories,4,Accessories,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Acoustic Guitars,1,Acoustic Guitars,Musical instruments,retain,Preserve category or more specific subcategory
+agriculture,1,agriculture,agriculture,retain,Preserve category or more specific subcategory
+Antiques,3,Antiques,Antiques,retain,Preserve category or more specific subcategory
+Art and Decor,1,Art and Decor,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Arts and crafts,1,Arts and crafts,Arts and crafts,retain,Preserve category or more specific subcategory
+Automotive Accessories,1,Automotive Accessories,Automotive Accessories,retain,Preserve category or more specific subcategory
+Baby Products,2,Baby Products,Baby Products,retain,Preserve category or more specific subcategory
+Bags,1,Bags,Clothing and accessories,retain,Preserve category or more specific subcategory
+Bags & Accessories,5,Bags and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Bags and accessories,2,Bags and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Beauty and personal care,1,Beauty and personal care,Personal care,retain,Preserve category or more specific subcategory
+Bicycle,2,Bicycles,Cycling,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Book,1,Books,Books,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+ Books,2,Books,Books,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Books,141,Books,Books,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Camera,1,Camera,Electronics,retain,Preserve category or more specific subcategory
+Cameras & Photography,1,Cameras & Photography,Electronics,retain,Preserve category or more specific subcategory
+Camping Equipment,1,Camping Equipment,Camping Equipment,retain,Preserve category or more specific subcategory
+Car,1,Cars,Vehicles,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Cars,8,Cars,Vehicles,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+cars,4,Cars,Vehicles,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Chess,1,Chess,Toys and games,retain,Preserve category or more specific subcategory
+clothes,1,Clothing,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing,9,Clothing,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+ Clothing and Accessories,1,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing & Accessories,25,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing & accessories,3,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing and Accessories,38,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing and accessories,169,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing and accessories ,5,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+clothing and Accessories,2,Clothing and accessories,Clothing and accessories,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Clothing & Footwear,2,Clothing & Footwear,Clothing and accessories,retain,Preserve category or more specific subcategory
+Collectibles,1,Collectibles,Collectibles,retain,Preserve category or more specific subcategory
+Commercial Equipment,2,Commercial Equipment,Commercial Equipment,retain,Preserve category or more specific subcategory
+Computer Monitors,1,Computer Monitors,Electronics,retain,Preserve category or more specific subcategory
+Cordless Drills,1,Cordless Drills,Tools,retain,Preserve category or more specific subcategory
+Decor,1,Decor,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Dining Tables and Chair Sets,1,Dining Tables and Chair Sets,Furniture,retain,Preserve category or more specific subcategory
+Electric Bicycles,1,Electric Bicycles,Cycling,retain,Preserve category or more specific subcategory
+ Electronics,3,Electronics,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Electronics,361,Electronics,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Electronics ,4,Electronics,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+electronics,11,Electronics,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Electronics and Accessories,1,Electronics and Accessories,Electronics,retain,Preserve category or more specific subcategory
+Electronics & Gaming,1,Electronics & Gaming,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Electronics and Tech,4,Electronics and Tech,Electronics,retain,Preserve category or more specific subcategory
+Fitness Equipment,1,Fitness Equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Fitness equipment,1,Fitness Equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Footwear,2,Footwear,Clothing and accessories,retain,Preserve category or more specific subcategory
+ Furniture,2,Furniture,Furniture,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Furniture,178,Furniture,Furniture,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Furniture ,4,Furniture,Furniture,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+furniture,1,Furniture,Furniture,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+furniture ,3,Furniture,Furniture,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Furniture & Home Decor,2,Furniture & Home Decor,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Games,2,Games,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Games and toys,1,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Garden and Outdoor Gear,3,Garden and Outdoor Gear,Garden and Outdoor Gear,retain,Preserve category or more specific subcategory
+Gas Cookers and Ovens,1,Gas Cookers and Ovens,Kitchen and household items,retain,Preserve category or more specific subcategory
+Health,1,Health,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Health & Personal Care,2,Health & Personal Care,Personal care,retain,Preserve category or more specific subcategory
+Home Decor,2,Home decor,Home decor,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Home decor,8,Home decor,Home decor,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Home décor,1,Home decor,Home decor,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Household & Everyday Items,2,Household & Everyday Items,Kitchen and household items,retain,Preserve category or more specific subcategory
+Household Appliances,1,Household Appliances,Kitchen and household items,retain,Preserve category or more specific subcategory
+Keyboards,1,Keyboards,Electronics,retain,Preserve category or more specific subcategory
+Kitchen,6,Kitchen items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen & Household,21,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen & household,3,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and Household,8,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and household,3,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and household item,1,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+ Kitchen and household items,2,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen & Household Items,3,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and Household Items,20,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and household items,173,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Kitchen and household items ,5,Kitchen and household items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+kitchen items,1,Kitchen items,Kitchen and household items,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Laptops,4,Laptops,Electronics,retain,Preserve category or more specific subcategory
+Microwave Ovens,1,Microwave Ovens,Kitchen and household items,retain,Preserve category or more specific subcategory
+Mobile & Tablet Accessories,2,Mobile & Tablet Accessories,Electronics,retain,Preserve category or more specific subcategory
+Mobile Phones,3,Mobile phones,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+motorcycles,1,motorcycles,Vehicles,retain,Preserve category or more specific subcategory
+Musical Instrument,2,Musical instruments,Musical instruments,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+ Musical instruments,2,Musical instruments,Musical instruments,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Musical Instruments,23,Musical instruments,Musical instruments,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Musical instruments,44,Musical instruments,Musical instruments,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Office & Household,1,Office & Household,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Office and school supplies,1,Office and school supplies,Stationery and office supplies,retain,Preserve category or more specific subcategory
+Other,2,Other used products,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+ Other used products,1,Other used products,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Other Used Products,7,Other used products,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Other Used Products ,2,Other used products,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Other used products,38,Other used products,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+Personal Care,2,Personal Care,Personal care,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Personal care,2,Personal Care,Personal care,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Pet Supplies,2,Pet Supplies,Pet Supplies,retain,Preserve category or more specific subcategory
+Phone Accessories,1,Phone Accessories,Electronics,retain,Preserve category or more specific subcategory
+Phones,3,Mobile phones,Electronics,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Refrigerators,1,Refrigerators,Kitchen and household items,retain,Preserve category or more specific subcategory
+Rugs and Carpets,1,Rugs and Carpets,Rugs and Carpets,retain,Preserve category or more specific subcategory
+Science Textbooks,1,Science Textbooks,Books,retain,Preserve category or more specific subcategory
+Shoes,3,Shoes,Clothing and accessories,retain,Preserve category or more specific subcategory
+Smartphone,1,Smartphone,Electronics,retain,Preserve category or more specific subcategory
+Smartwatch,1,Smartwatch,Electronics,retain,Preserve category or more specific subcategory
+Sports,2,Sports,,review,"Broad, overlapping, or catch-all label. Retain and review context"
+ Sports equipment,1,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Sports Equipment,43,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Sports Equipment ,2,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Sports equipment,82,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+sports equipment,1,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+sports equipments,3,Sports equipment,Sports equipment,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Stationery,6,Stationery,Stationery and office supplies,retain,Preserve category or more specific subcategory
+Stationery and Office Supplies,3,Stationery and Office Supplies,Stationery and office supplies,retain,Preserve category or more specific subcategory
+Strollers,1,Strollers,Strollers,retain,Preserve category or more specific subcategory
+ Tools,1,Tools,Tools,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Tools,70,Tools,Tools,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+tools,1,Tools,Tools,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Toys,2,Toys,Toys and games,retain,Preserve category or more specific subcategory
+ Toys and games,1,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Toys & Games,12,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Toys and Games,20,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Toys and games,67,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+toys and games,2,Toys and games,Toys and games,proposed,"Case, spacing, accent, punctuation, or equivalent label"
+Vehicles,20,Vehicles,Vehicles,retain,Preserve category or more specific subcategory
+Video Game,2,Video Game,Toys and games,retain,Preserve category or more specific subcategory
+Video Game Console,1,Video Game Console,Electronics,retain,Preserve category or more specific subcategory
+Wallets & Small Leather Goods,2,Wallets & Small Leather Goods,Clothing and accessories,retain,Preserve category or more specific subcategory
+Wardrobes and Storage Cabinets,1,Wardrobes and Storage Cabinets,Furniture,retain,Preserve category or more specific subcategory
+Watches & Jewelry,3,Watches & Jewelry,Clothing and accessories,retain,Preserve category or more specific subcategory

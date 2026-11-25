@@ -1,0 +1,67 @@
+attribute,raw_label_or_form,diagnostic_interpretation,status,records
+age,missing,,parse_status,385
+age,months,explicit months,parse_status,6
+age,numeric,assignment years,parse_status,1095
+age,numeric,header years,parse_status,293
+age,unit_typo_review,literal unit: moths,parse_status,1
+age,years_text,explicit years,parse_status,21
+condition,,,missing,15
+condition, 1,1,integer_format,1
+condition, 2,2,integer_format,2
+condition, 3,3,integer_format,4
+condition, 4,4,integer_format,5
+condition, 5,5,integer_format,3
+condition,1,1,integer,40
+condition,2,2,integer,138
+condition,2 — Poor,2,number_and_label,1
+condition,2.0,2,integer_format,2
+condition,3,3,integer,441
+condition,3.0,3,integer_format,3
+condition,4,4,integer,718
+condition,4 — Good,4,number_and_label,8
+condition,4 — Good ,4,number_and_label,3
+condition,4.0,4,integer_format,10
+condition,5,5,integer,383
+condition,5 — Like New,5,number_and_label,3
+condition,9,,outside_scale,1
+condition,Fair,3,assignment_label,2
+condition,Fair ,3,assignment_label,1
+condition,Like new,5,assignment_label,1
+condition,Unknown,,missing,5
+condition,good,4,assignment_label,10
+condition,poor,2,assignment_label,1
+currency,,,missing,21
+currency, ,,missing,2
+currency, GBP,GBP,equivalent_label,5
+currency, USD,USD,equivalent_label,10
+currency,AED,AED,recorded_code,9
+currency,AUD,AUD,recorded_code,1
+currency,CHF,CHF,recorded_code,19
+currency,EGP,EGP,recorded_code,6
+currency,EUR,EUR,recorded_code,23
+currency,GBP,GBP,recorded_code,49
+currency,ILS,ILS,recorded_code,1106
+currency,ILS ,ILS,equivalent_label,7
+currency,INR,INR,recorded_code,1
+currency,IQD,IQD,recorded_code,1
+currency,JOD,JOD,recorded_code,10
+currency,LYD,LYD,recorded_code,1
+currency,NIS,ILS,equivalent_label,48
+currency,SAR,SAR,recorded_code,4
+currency,SEK,SEK,recorded_code,1
+currency,SGD,SGD,recorded_code,7
+currency,Shekel,ILS,equivalent_label,15
+currency,TWD,TWD,recorded_code,2
+currency,USD,USD,recorded_code,375
+currency,USD ,USD,equivalent_label,5
+currency,Unknown,,missing,12
+currency,dollar,,ambiguous_label,10
+currency,ils,ILS,equivalent_label,21
+currency,shekel,ILS,equivalent_label,6
+currency,usd,USD,equivalent_label,9
+currency,₪,ILS,equivalent_label,15
+price,ambiguous_separator,,parse_status,6
+price,missing,,parse_status,33
+price,plain,,parse_status,1755
+price,supported_grouping,,parse_status,6
+price,zero_documented,,parse_status,1

@@ -22,6 +22,16 @@
 /marketplace_raw.csv
 /marketplace_cleaned.csv
 /.venv/
+!/Data/
+!/Data/*.csv
+!/Audit/
+!/Audit/*.md
+!/Audit/*.csv
+!/Audit/*.png
+!/Audit/public/
+/Audit/public/*
+!/Audit/public/*.md
+!/Audit/public/*.csv
 
 __pycache__/
 .ipynb_checkpoints/
