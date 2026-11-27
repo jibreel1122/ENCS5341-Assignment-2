@@ -14,6 +14,7 @@
 /Docs/*
 !/Docs/*.md
 !/Docs/exchange_rates.csv
+!/Docs/*.pdf
 
 # Keep course inputs and generated evidence outside the public tree.
 /LocalData/
